@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::thread;
 use std::time::{Duration, Instant};
+use tokio::sync::Notify;
 
 fn main() {
     let mut mini_tokio = MiniTokio::new();
@@ -124,4 +125,21 @@ impl Future for Delay {
             Poll::Pending
         }
     }
+}
+
+async fn delay(duration: Duration) {
+    let when = Instant::now() + duration;
+    let notify = Arc::new(Notify::new());
+    let notify2 = notify.clone();
+
+    thread::spawn(move || {
+        let now = Instant::now();
+        if now < when {
+            thread::sleep(when - now);
+        }
+        
+        notify2.notify_one();
+    });
+    
+    notify.notified().await;
 }
