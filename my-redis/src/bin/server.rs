@@ -20,7 +20,7 @@ fn new_shared_db(num_shards: usize) -> SharedDb {
 }
 
 fn get_shard_index(key: &str, db: &SharedDb) -> usize {
-   let mut hasher = DefaultHasher::new();
+    let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
     let db_hash = hasher.finish() as usize;
     db_hash % db.len()
