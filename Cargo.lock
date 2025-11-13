@@ -126,6 +126,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f28d99ec8bfea296261ca1af174f24225171fea9664ba9003cbebee704810528"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -565,7 +574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "528890a6b63c88c9bda173867128abe62c0f5050dd959f067aeea09e90439f33"
 dependencies = [
  "async-stream",
- "atoi",
+ "atoi 0.3.3",
  "bytes",
  "structopt",
  "tokio",
@@ -590,6 +599,7 @@ dependencies = [
 name = "my-redis"
 version = "0.1.0"
 dependencies = [
+ "atoi 2.0.0",
  "bytes",
  "crossbeam",
  "futures",
