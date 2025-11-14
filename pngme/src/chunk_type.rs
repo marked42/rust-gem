@@ -22,17 +22,19 @@ impl From<&str> for ChunkTypeError {
     }
 }
 
+pub const BYTES_BIT_MASK: u8 = 0b00100000;
+pub const BYTES_LENGTH: usize = 4;
+pub type Bytes = [u8; BYTES_LENGTH];
 
 #[derive(Debug)]
 pub struct ChunkType {
-    data: [u8; 4],
+    bytes: Bytes,
 }
 
-pub const CHUNK_TYPE_BIT_MASK: u8 = 0b00100000;
-
 impl ChunkType {
-    fn bytes(&self) -> [u8; 4] {
-        self.data
+
+    fn bytes(&self) -> Bytes {
+        self.bytes
     }
 
     fn is_valid_type_byte(val: u8) -> bool {
@@ -40,15 +42,15 @@ impl ChunkType {
     }
 
     fn is_critical(&self) -> bool {
-        (self.data[0] & CHUNK_TYPE_BIT_MASK) == 0
+        (self.bytes[0] & BYTES_BIT_MASK) == 0
     }
 
     fn is_public(&self) -> bool {
-        (self.data[1] & CHUNK_TYPE_BIT_MASK) == 0
+        (self.bytes[1] & BYTES_BIT_MASK) == 0
     }
 
     fn is_reserved_bit_valid(&self) -> bool {
-        (self.data[2] & CHUNK_TYPE_BIT_MASK) == 0
+        (self.bytes[2] & BYTES_BIT_MASK) == 0
     }
 
     fn is_valid(&self) -> bool {
@@ -57,15 +59,15 @@ impl ChunkType {
 
     /// bit 5 equals 1 means safe to copy
     fn is_safe_to_copy(&self) -> bool {
-        (self.data[3] & CHUNK_TYPE_BIT_MASK) == CHUNK_TYPE_BIT_MASK
+        (self.bytes[3] & BYTES_BIT_MASK) == BYTES_BIT_MASK
     }
 }
 
-impl TryFrom<[u8; 4]> for ChunkType {
+impl TryFrom<Bytes> for ChunkType {
     type Error = ChunkTypeError;
 
-    fn try_from(value: [u8; 4]) -> Result<Self, Self::Error> {
-        for i in 0..4 {
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        for i in 0..BYTES_LENGTH {
             if !Self::is_valid_type_byte(value[i]) {
                 // unicode 完全兼容 ascii，所以这里unsafe一定会成功
                 let code = unsafe { str::from_utf8_unchecked(&value) };
@@ -73,7 +75,7 @@ impl TryFrom<[u8; 4]> for ChunkType {
             }
         }
 
-        Ok(ChunkType { data: value })
+        Ok(ChunkType { bytes: value })
     }
 }
 
@@ -82,11 +84,11 @@ impl FromStr for ChunkType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = s.as_bytes();
-        if bytes.len() != 4 {
+        if bytes.len() != BYTES_LENGTH {
             return Err(s.into());
         }
 
-        let code: [u8; 4] =  bytes[0..4].try_into().unwrap();
+        let code: Bytes =  bytes[0..BYTES_LENGTH].try_into().unwrap();
 
         code.try_into()
     }
@@ -94,13 +96,13 @@ impl FromStr for ChunkType {
 
 impl PartialEq for ChunkType {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        self.bytes == other.bytes
     }
 }
 
 impl Display for ChunkType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", unsafe { str::from_utf8_unchecked(&self.data) })
+        write!(f, "{}", unsafe { str::from_utf8_unchecked(&self.bytes) })
     }
 }
 
