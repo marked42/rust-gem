@@ -18,7 +18,7 @@ async fn main() {
     println!("app shutdown {:?}", r);
 }
 
-async fn some_operation(i: u64, sender: mpsc::Sender<u32>) {
+async fn some_operation(i: u64, _sender: mpsc::Sender<u32>) {
     time::sleep(Duration::from_millis(100 * i)).await;
     println!("Task {} shutting down", i);
 }
