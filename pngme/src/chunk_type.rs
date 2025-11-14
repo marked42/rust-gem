@@ -2,21 +2,21 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct ChunkTypeError(String);
+pub struct Error(String);
 
-impl Display for ChunkTypeError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "invalid chunk type {}", self.0)
     }
 }
 
-impl From<String> for ChunkTypeError {
+impl From<String> for Error {
     fn from(value: String) -> Self {
-        ChunkTypeError(value)
+        Error(value)
     }
 }
 
-impl From<&str> for ChunkTypeError {
+impl From<&str> for Error {
     fn from(value: &str) -> Self {
         value.to_string().into()
     }
@@ -64,7 +64,7 @@ impl ChunkType {
 }
 
 impl TryFrom<Bytes> for ChunkType {
-    type Error = ChunkTypeError;
+    type Error = Error;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         for i in 0..BYTES_LENGTH {
@@ -80,7 +80,7 @@ impl TryFrom<Bytes> for ChunkType {
 }
 
 impl FromStr for ChunkType {
-    type Err = ChunkTypeError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = s.as_bytes();
