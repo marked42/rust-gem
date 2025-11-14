@@ -8,3 +8,10 @@ members = ["echo", "my-redis"]
 
 
 # [dependencies]
+
+[[example]]
+name = "async"
+path = "src/examples/async.rs"
+
+[dependencies]
+tokio = "1.48.0"

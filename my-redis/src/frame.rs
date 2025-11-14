@@ -1,5 +1,5 @@
-use std::fmt;
 use bytes::{Buf, Bytes};
+use std::fmt;
 use std::io::Cursor;
 use std::num::TryFromIntError;
 use std::string::FromUtf8Error;
@@ -44,7 +44,7 @@ impl Frame {
             Frame::Array(vec) => {
                 vec.push(Frame::Bulk(bytes));
             }
-            _ => panic!("not an array frame")
+            _ => panic!("not an array frame"),
         }
     }
 
@@ -52,7 +52,7 @@ impl Frame {
         match self {
             Frame::Array(vec) => {
                 vec.push(Frame::Integer(value));
-            },
+            }
             _ => panic!("not an array frame"),
         }
     }
@@ -176,7 +176,7 @@ impl fmt::Display for Frame {
             Frame::Bulk(msg) => match str::from_utf8(msg) {
                 Ok(string) => string.fmt(f),
                 Err(_) => write!(f, "{:?}", msg),
-            }
+            },
             Frame::Null => "(nil)".fmt(f),
             Frame::Array(parts) => {
                 for (i, part) in parts.iter().enumerate() {

@@ -9,6 +9,6 @@ async fn main() -> io::Result<()> {
 
     let n = f.read(&mut buffer).await?;
 
-    println!("The bytes: {:?}",  String::from_utf8_lossy(&buffer[..n]));
+    println!("The bytes: {:?}", String::from_utf8_lossy(&buffer[..n]));
     Ok(())
 }

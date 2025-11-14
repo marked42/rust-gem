@@ -39,8 +39,5 @@ async fn main() {
         let _ = tx2.send("second");
     });
 
-    MySelect {
-        rx1,
-        rx2,
-    }.await;
+    MySelect { rx1, rx2 }.await;
 }

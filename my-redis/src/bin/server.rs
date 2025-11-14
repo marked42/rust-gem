@@ -1,11 +1,11 @@
+use bytes::Bytes;
+use mini_redis::{Connection, Frame};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use std::hash::{Hash, Hasher};
-use bytes::Bytes;
-use mini_redis::{Connection, Frame};
 use tokio::net::{TcpListener, TcpStream};
 
 type SharedDb = Arc<Vec<Mutex<HashMap<String, Bytes>>>>;
