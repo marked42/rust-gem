@@ -34,7 +34,8 @@ impl Task {
     }
 
     fn spawn<F>(future: F, sender: &channel::Sender<Arc<Task>>)
-    where F: Future<Output = ()> + Send + 'static
+    where
+        F: Future<Output = ()> + Send + 'static,
     {
         let task = Arc::new(Task {
             future: Mutex::new(Box::pin(future)),
@@ -137,9 +138,9 @@ async fn delay(duration: Duration) {
         if now < when {
             thread::sleep(when - now);
         }
-        
+
         notify2.notify_one();
     });
-    
+
     notify.notified().await;
 }

@@ -6,8 +6,15 @@ type Responder<T> = oneshot::Sender<mini_redis::Result<T>>;
 
 #[derive(Debug)]
 enum Command {
-    Get { key: String, resp: Responder<Option<Bytes>> },
-    Set { key: String, value: Bytes, resp: Responder<()> },
+    Get {
+        key: String,
+        resp: Responder<Option<Bytes>>,
+    },
+    Set {
+        key: String,
+        value: Bytes,
+        resp: Responder<()>,
+    },
 }
 
 #[tokio::main]

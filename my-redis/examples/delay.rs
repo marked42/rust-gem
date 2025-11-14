@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use my_redis::delay::Delay;
+use std::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() {

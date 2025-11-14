@@ -1,8 +1,8 @@
+use crate::delay::Delay;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio_stream::Stream;
-use crate::delay::Delay;
 
 pub struct Interval {
     pub rem: usize,
@@ -23,7 +23,7 @@ impl Stream for Interval {
                 self.delay = Delay { when };
                 self.rem -= 1;
                 Poll::Ready(Some(()))
-            } 
+            }
             Poll::Pending => Poll::Pending,
         }
     }
