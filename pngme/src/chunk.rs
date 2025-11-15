@@ -3,8 +3,23 @@ use crate::{Error, Result};
 use crc::{CRC_32_ISO_HDLC, Crc};
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
+use thiserror::Error;
 
 const PNG_CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
+
+#[derive(Debug, Error)]
+pub enum ChunkError {
+    #[error("Too few bytes: received {0} bytes, expected as least {min} bytes)", min = ChunkLayout::MIN_SIZE)]
+    TooFewBytes(usize),
+    #[error("Data too large: received {0} bytes, expected as most {max} bytes)", max = u32::MAX)]
+    DataTooLarge(usize),
+    #[error("Invalid chunk type: {0}")]
+    InvalidChunkType(String),
+    #[error("Invalid data length: expected {expected}, got {actual}")]
+    DataLengthMismatch { expected: usize, actual: usize},
+    #[error("CRC mismatch: expected {expected}, got {actual}")]
+    CrcMismatch { expected: u32, actual: u32 },
+}
 
 struct ChunkLayout;
 
@@ -68,53 +83,58 @@ pub struct Chunk {
 impl Chunk {
     fn new(chunk_type: ChunkType, data: Vec<u8>) -> Result<Self> {
         if data.len() > u32::MAX as usize {
-            return Err("Data too large".into());
+            return Err(ChunkError::DataTooLarge(data.len()).into());
         }
-            
+
         let crc = Self::calculate_crc(&chunk_type.bytes(), &data);
 
-        Ok(Chunk {
+        Ok(Self::new_unchecked(chunk_type, data))
+    }
+
+    /// must be private to prevent from constructing invalid Chunk
+    fn new_unchecked(chunk_type: ChunkType, data: Vec<u8>) -> Self {
+        let crc = Self::calculate_crc(&chunk_type.bytes(), &data);
+
+        Chunk {
             length: data.len() as u32,
             chunk_type,
             data,
             crc,
-        })
+        }
     }
 
     fn from_bytes(value: &[u8]) -> Result<Self> {
         if value.len() < ChunkLayout::MIN_SIZE {
-            return Err(format!(
-                "bytes length {} less than min chunk length {}",
-                value.len(),
-                ChunkLayout::MIN_SIZE
-            )
-            .into());
+            return Err(ChunkError::TooFewBytes(value.len()).into());
         }
 
-        let length_bytes =
-            ChunkLayout::length_bytes(value).map_err(|_| "Failed to extract length")?;
+        // this is guaranteed success due to previous MIN_SIZE check
+        let length_bytes: [u8; 4] = unsafe { ChunkLayout::length_bytes(value).unwrap_unchecked() };
+
         let data_length = u32::from_be_bytes(length_bytes) as usize;
-
-        let expected_total_length = ChunkLayout::total_length(data_length);
-        if value.len() != expected_total_length {
-            return Err(format!(
-                "actual length {} does not match expected length {} ",
-                value.len(),
-                expected_total_length
-            )
-            .into());
+        let actual_data_length = value.len() - ChunkLayout::MIN_SIZE;
+        if actual_data_length != data_length {
+            return Err(ChunkError::DataLengthMismatch {
+                expected: data_length,
+                actual: actual_data_length,
+            }.into());
         }
 
-        let type_bytes = ChunkLayout::type_bytes(value).map_err(|_| "Failed to extract type")?;
-        let chunk_type: ChunkType = type_bytes.try_into()?;
+        // this is guaranteed success due to previous MIN_SIZE check
+        let type_bytes = unsafe { ChunkLayout::type_bytes(value).unwrap_unchecked() };
+        let chunk_type: ChunkType = type_bytes.try_into().map_err(|e| ChunkError::InvalidChunkType(format!("{:?}", e)))?;
 
         let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length).to_vec();
 
-        let crc_bytes = ChunkLayout::crc_bytes(value, data_length)
-            .map_err(|_| "Failed to extract crc")?;
+        // this is guaranteed success due to previous MIN_SIZE check
+        let crc_bytes = unsafe { ChunkLayout::crc_bytes(value, data_length).unwrap_unchecked() };
         let crc = u32::from_be_bytes(crc_bytes);
-        if !Self::verify_crc(&chunk_type.bytes(), &data, crc) {
-            return Err("invalid CRC".into());
+        let expected_crc = Self::calculate_crc(&chunk_type.bytes(), &data);
+        if crc != expected_crc {
+            return Err(ChunkError::CrcMismatch {
+                expected: expected_crc,
+                actual: crc,
+            }.into());
         }
 
         Ok(Chunk {
