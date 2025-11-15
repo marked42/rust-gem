@@ -1,6 +1,7 @@
 // mod args;
 // mod chunk;
 mod chunk_type;
+mod chunk;
 // mod commands;
 // mod png;
 
