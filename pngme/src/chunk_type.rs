@@ -1,32 +1,12 @@
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-
-#[derive(Debug)]
-pub struct Error(String);
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid chunk type {}", self.0)
-    }
-}
-
-impl From<String> for Error {
-    fn from(value: String) -> Self {
-        Error(value)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(value: &str) -> Self {
-        value.to_string().into()
-    }
-}
+use crate::{Result, Error};
 
 pub const BYTES_BIT_MASK: u8 = 0b00100000;
 pub const BYTES_LENGTH: usize = 4;
 pub type Bytes = [u8; BYTES_LENGTH];
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkType {
     bytes: Bytes,
 }
@@ -37,7 +17,7 @@ impl ChunkType {
         self.bytes
     }
 
-    fn is_valid_type_byte(val: u8) -> bool {
+    fn is_valid_type(val: u8) -> bool {
         val.is_ascii_alphabetic()
     }
 
@@ -66,9 +46,9 @@ impl ChunkType {
 impl TryFrom<Bytes> for ChunkType {
     type Error = Error;
 
-    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+    fn try_from(value: Bytes) -> Result<Self> {
         for i in 0..BYTES_LENGTH {
-            if !Self::is_valid_type_byte(value[i]) {
+            if !Self::is_valid_type(value[i]) {
                 // unicode 完全兼容 ascii，所以这里unsafe一定会成功
                 let code = unsafe { str::from_utf8_unchecked(&value) };
                 return Err(code.into());
@@ -82,7 +62,7 @@ impl TryFrom<Bytes> for ChunkType {
 impl FromStr for ChunkType {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         let bytes = s.as_bytes();
         if bytes.len() != BYTES_LENGTH {
             return Err(s.into());
@@ -91,12 +71,6 @@ impl FromStr for ChunkType {
         let code: Bytes =  bytes[0..BYTES_LENGTH].try_into().unwrap();
 
         code.try_into()
-    }
-}
-
-impl PartialEq for ChunkType {
-    fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
     }
 }
 
