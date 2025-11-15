@@ -12,7 +12,8 @@ impl ChunkLayout {
     pub const LENGTH_SIZE: usize = 4;
     pub const TYPE_SIZE: usize = 4;
     pub const CRC_SIZE: usize = 4;
-    pub const MIN_SIZE: usize = Self::LENGTH_SIZE + Self::TYPE_SIZE + Self::CRC_SIZE;
+    pub const HEADER_SIZE: usize = Self::LENGTH_SIZE + Self::TYPE_SIZE;
+    pub const MIN_SIZE: usize = Self::HEADER_SIZE + Self::CRC_SIZE;
 
     fn length_range() -> Range<usize> {
         0..Self::LENGTH_SIZE
@@ -24,7 +25,8 @@ impl ChunkLayout {
     }
 
     fn type_range() -> Range<usize> {
-        Self::length_range().end..(Self::length_range().end + Self::TYPE_SIZE)
+        let start = Self::length_range().end;
+        start..start + Self::TYPE_SIZE
     }
 
     fn type_bytes(bytes: &[u8]) -> Result<[u8; Self::TYPE_SIZE]> {
@@ -33,7 +35,8 @@ impl ChunkLayout {
     }
 
     fn data_range(data_length: usize) -> Range<usize> {
-        Self::type_range().end..(Self::type_range().end + data_length)
+        let start = Self::type_range().end;
+        start..start + data_length
     }
 
     fn data_bytes(bytes: &[u8], data_length: usize) -> &[u8] {
@@ -41,7 +44,8 @@ impl ChunkLayout {
     }
 
     fn crc_range(data_length: usize) -> Range<usize> {
-        Self::data_range(data_length).end..(Self::data_range(data_length).end + Self::CRC_SIZE)
+        let start = Self::data_range(data_length).end;
+        start..start + Self::CRC_SIZE 
     }
 
     fn crc_bytes(bytes: &[u8], data_length: usize) -> Result<[u8; Self::CRC_SIZE]> {
