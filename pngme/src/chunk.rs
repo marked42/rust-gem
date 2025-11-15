@@ -81,7 +81,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    fn new(chunk_type: ChunkType, data: Vec<u8>) -> Result<Self> {
+    pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> Result<Self> {
         if data.len() > u32::MAX as usize {
             return Err(ChunkError::DataTooLarge(data.len()).into());
         }
@@ -103,7 +103,7 @@ impl Chunk {
         }
     }
 
-    fn from_bytes(value: &[u8]) -> Result<Self> {
+    pub fn from_bytes(value: &[u8]) -> Result<Self> {
         if value.len() < ChunkLayout::MIN_SIZE {
             return Err(ChunkError::TooFewBytes(value.len()).into());
         }
@@ -146,40 +146,40 @@ impl Chunk {
         })
     }
 
-    fn calculate_crc(chunk_type: &[u8; 4], data: &[u8]) -> u32 {
+    pub fn calculate_crc(chunk_type: &[u8; 4], data: &[u8]) -> u32 {
         let mut digest = PNG_CRC.digest();
         digest.update(chunk_type);
         digest.update(data);
         digest.finalize()
     }
 
-    fn verify_crc(chunk_type: &[u8; 4], data: &[u8], crc: u32) -> bool {
+    pub fn verify_crc(chunk_type: &[u8; 4], data: &[u8], crc: u32) -> bool {
         let expected_crc = Self::calculate_crc(chunk_type, data);
         crc == expected_crc
     }
 
-    fn length(&self) -> u32 {
+    pub fn length(&self) -> u32 {
         self.length
     }
 
-    fn chunk_type(&self) -> &ChunkType {
+    pub fn chunk_type(&self) -> &ChunkType {
         &self.chunk_type
     }
 
-    fn data(&self) -> &[u8] {
+    pub fn data(&self) -> &[u8] {
         &self.data
     }
 
-    fn data_as_string(&self) -> Result<String> {
+    pub fn data_as_string(&self) -> Result<String> {
         String::from_utf8(self.data.clone())
             .map_err(|e| format!("Invalid UTF-8 in chunk data: {}", e).into())
     }
 
-    fn crc(&self) -> u32 {
+    pub fn crc(&self) -> u32 {
         self.crc
     }
 
-    fn as_bytes(&self) -> Vec<u8> {
+    pub fn as_bytes(&self) -> Vec<u8> {
         let capacity = ChunkLayout::total_length(self.length as usize);
         let mut bytes: Vec<u8> = Vec::with_capacity(capacity);
 
