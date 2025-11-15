@@ -67,7 +67,7 @@ pub struct Chunk {
 
 impl Chunk {
     fn new(chunk_type: ChunkType, data: Vec<u8>) -> Self {
-        let crc = Self::calculate_crc(&chunk_type.bytes(), data.as_slice());
+        let crc = Self::calculate_crc(&chunk_type.bytes(), &data);
 
         Chunk {
             length: data.len() as u32,
@@ -158,10 +158,10 @@ impl Chunk {
         let capacity = ChunkLayout::total_length(self.length as usize);
         let mut bytes: Vec<u8> = Vec::with_capacity(capacity);
 
-        bytes.extend_from_slice(self.length.to_be_bytes().as_slice());
-        bytes.extend_from_slice(self.chunk_type.bytes().as_slice());
-        bytes.extend_from_slice(self.data.as_slice());
-        bytes.extend_from_slice(self.crc.to_be_bytes().as_slice());
+        bytes.extend_from_slice(&self.length.to_be_bytes());
+        bytes.extend_from_slice(&self.chunk_type.bytes());
+        bytes.extend_from_slice(&self.data);
+        bytes.extend_from_slice(&self.crc.to_be_bytes());
 
         bytes
     }
