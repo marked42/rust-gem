@@ -25,8 +25,7 @@ impl ChunkLayout {
     }
 
     fn type_range() -> Range<usize> {
-        let start = Self::length_range().end;
-        start..start + Self::TYPE_SIZE
+        Self::LENGTH_SIZE..Self::HEADER_SIZE
     }
 
     fn type_bytes(bytes: &[u8]) -> Result<[u8; Self::TYPE_SIZE]> {
@@ -35,7 +34,7 @@ impl ChunkLayout {
     }
 
     fn data_range(data_length: usize) -> Range<usize> {
-        let start = Self::type_range().end;
+        let start = Self::HEADER_SIZE;
         start..start + data_length
     }
 
@@ -45,12 +44,16 @@ impl ChunkLayout {
 
     fn crc_range(data_length: usize) -> Range<usize> {
         let start = Self::data_range(data_length).end;
-        start..start + Self::CRC_SIZE 
+        start..start + Self::CRC_SIZE
     }
 
     fn crc_bytes(bytes: &[u8], data_length: usize) -> Result<[u8; Self::CRC_SIZE]> {
         let b: [u8; Self::CRC_SIZE] = bytes[Self::crc_range(data_length)].try_into()?;
         Ok(b)
+    }
+
+    fn total_length(data_length: usize) -> usize {
+        data_length + Self::MIN_SIZE
     }
 }
 
@@ -64,7 +67,7 @@ pub struct Chunk {
 
 impl Chunk {
     fn new(chunk_type: ChunkType, data: Vec<u8>) -> Self {
-        let crc = Self::calculate_crc(chunk_type.bytes(), data.as_slice());
+        let crc = Self::calculate_crc(&chunk_type.bytes(), data.as_slice());
 
         Chunk {
             length: data.len() as u32,
@@ -84,23 +87,29 @@ impl Chunk {
             .into());
         }
 
-        let data_length = u32::from_be_bytes(ChunkLayout::length_bytes(value)?);
+        let length_bytes =
+            ChunkLayout::length_bytes(value).map_err(|_| "Failed to extract length")?;
+        let data_length = u32::from_be_bytes(length_bytes);
 
-        let actual_data_length = value.len() as u32 - 12;
-        if data_length != actual_data_length {
+        let expected_total_length = ChunkLayout::total_length(data_length as usize);
+        if value.len() != expected_total_length {
             return Err(format!(
-                "actual data length {} does not match specified data length {} ",
-                actual_data_length, data_length
+                "actual length {} does not match expected length {} ",
+                value.len(),
+                expected_total_length
             )
             .into());
         }
 
-        let chunk_type: ChunkType = ChunkLayout::type_bytes(value)?.try_into()?;
+        let type_bytes = ChunkLayout::type_bytes(value).map_err(|_| "Failed to extract type")?;
+        let chunk_type: ChunkType = type_bytes.try_into()?;
 
-        let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length as usize).try_into()?;
+        let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length as usize).to_vec();
 
-        let crc = u32::from_be_bytes(ChunkLayout::crc_bytes(value, data_length as usize)?);
-        if !Self::verify_crc(chunk_type.bytes(), data.as_slice(), crc) {
+        let crc_bytes = ChunkLayout::crc_bytes(value, data_length as usize)
+            .map_err(|_| "Failed to extract crc")?;
+        let crc = u32::from_be_bytes(crc_bytes);
+        if !Self::verify_crc(&chunk_type.bytes(), &data, crc) {
             return Err("invalid CRC".into());
         }
 
@@ -112,14 +121,14 @@ impl Chunk {
         })
     }
 
-    fn calculate_crc(chunk_type: [u8; 4], data: &[u8]) -> u32 {
+    fn calculate_crc(chunk_type: &[u8; 4], data: &[u8]) -> u32 {
         let mut digest = PNG_CRC.digest();
-        digest.update(&chunk_type);
+        digest.update(chunk_type);
         digest.update(data);
         digest.finalize()
     }
 
-    fn verify_crc(chunk_type: [u8; 4], data: &[u8], crc: u32) -> bool {
+    fn verify_crc(chunk_type: &[u8; 4], data: &[u8], crc: u32) -> bool {
         let expected_crc = Self::calculate_crc(chunk_type, data);
         crc == expected_crc
     }
@@ -133,14 +142,12 @@ impl Chunk {
     }
 
     fn data(&self) -> &[u8] {
-        self.data.as_slice()
+        &self.data
     }
 
     fn data_as_string(&self) -> Result<String> {
-        match String::from_utf8(self.data.clone()) {
-            Ok(s) => Ok(s),
-            Err(e) => Err(e.to_string().into()),
-        }
+        String::from_utf8(self.data.clone())
+            .map_err(|e| format!("Invalid UTF-8 in chunk data: {}", e).into())
     }
 
     fn crc(&self) -> u32 {
@@ -148,7 +155,8 @@ impl Chunk {
     }
 
     fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
+        let capacity = ChunkLayout::total_length(self.length as usize);
+        let mut bytes: Vec<u8> = Vec::with_capacity(capacity);
 
         bytes.extend_from_slice(self.length.to_be_bytes().as_slice());
         bytes.extend_from_slice(self.chunk_type.bytes().as_slice());
@@ -169,7 +177,11 @@ impl TryFrom<&[u8]> for Chunk {
 
 impl Display for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "length: {}, type: {}", self.length, self.chunk_type)
+        write!(
+            f,
+            "Chunk {{ type: {}, length: {}, crc: {} }}",
+            self.chunk_type, self.length, self.crc
+        )
     }
 }
 
