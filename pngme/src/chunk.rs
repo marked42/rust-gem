@@ -66,15 +66,19 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    fn new(chunk_type: ChunkType, data: Vec<u8>) -> Self {
+    fn new(chunk_type: ChunkType, data: Vec<u8>) -> Result<Self> {
+        if data.len() > u32::MAX as usize {
+            return Err("Data too large".into());
+        }
+            
         let crc = Self::calculate_crc(&chunk_type.bytes(), &data);
 
-        Chunk {
+        Ok(Chunk {
             length: data.len() as u32,
             chunk_type,
             data,
             crc,
-        }
+        })
     }
 
     fn from_bytes(value: &[u8]) -> Result<Self> {
@@ -89,9 +93,9 @@ impl Chunk {
 
         let length_bytes =
             ChunkLayout::length_bytes(value).map_err(|_| "Failed to extract length")?;
-        let data_length = u32::from_be_bytes(length_bytes);
+        let data_length = u32::from_be_bytes(length_bytes) as usize;
 
-        let expected_total_length = ChunkLayout::total_length(data_length as usize);
+        let expected_total_length = ChunkLayout::total_length(data_length);
         if value.len() != expected_total_length {
             return Err(format!(
                 "actual length {} does not match expected length {} ",
@@ -104,9 +108,9 @@ impl Chunk {
         let type_bytes = ChunkLayout::type_bytes(value).map_err(|_| "Failed to extract type")?;
         let chunk_type: ChunkType = type_bytes.try_into()?;
 
-        let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length as usize).to_vec();
+        let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length).to_vec();
 
-        let crc_bytes = ChunkLayout::crc_bytes(value, data_length as usize)
+        let crc_bytes = ChunkLayout::crc_bytes(value, data_length)
             .map_err(|_| "Failed to extract crc")?;
         let crc = u32::from_be_bytes(crc_bytes);
         if !Self::verify_crc(&chunk_type.bytes(), &data, crc) {
@@ -114,7 +118,8 @@ impl Chunk {
         }
 
         Ok(Chunk {
-            length: data_length,
+            // data_length is valid u32
+            length: data_length as u32,
             chunk_type,
             data,
             crc,
@@ -215,7 +220,7 @@ mod tests {
         let data = "This is where your secret message will be!"
             .as_bytes()
             .to_vec();
-        let chunk = Chunk::new(chunk_type, data);
+        let chunk = Chunk::new(chunk_type, data).unwrap();
         assert_eq!(chunk.length(), 42);
         assert_eq!(chunk.crc(), 2882656334);
     }
