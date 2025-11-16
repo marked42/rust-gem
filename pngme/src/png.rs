@@ -1,6 +1,8 @@
 use crate::chunk::{Chunk, ChunkError};
 use crate::{Error, Result};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, write};
+use std::fs;
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,7 +20,7 @@ pub enum PngError {
     InvalidChunk(#[from] ChunkError),
 }
 
-struct Png {
+pub struct Png {
     chunks: Vec<Chunk>,
 }
 
@@ -64,7 +66,7 @@ impl Png {
             .find(|chunk| chunk.chunk_type().as_str() == chunk_type)
     }
 
-    fn as_bytes(&self) -> Vec<u8> {
+    pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes: Vec<u8> = Vec::new();
 
         bytes.extend_from_slice(self.header());
@@ -73,6 +75,17 @@ impl Png {
         }
 
         bytes
+    }
+
+    pub fn try_from_path(path: &PathBuf) -> Result<Png> {
+        // 提供更好的错误信息
+        let data =
+            fs::read(path).map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
+
+        let png = Self::try_from(data.as_slice())
+            .map_err(|e| format!("Failed to parse PNG from {}: {}", path.display(), e))?;
+
+        Ok(png)
     }
 }
 
@@ -106,15 +119,11 @@ impl TryFrom<&[u8]> for Png {
 
 impl Display for Png {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Png with chunks [{}]",
-            self.chunks()
-                .iter()
-                .map(|chunk| chunk.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        writeln!(f, "Png file")?;
+        for chunk in self.chunks() {
+            writeln!(f, "{}", chunk)?;
+        }
+        Ok(())
     }
 }
 

@@ -86,8 +86,6 @@ impl Chunk {
             return Err(ChunkError::DataTooLarge(data.len()).into());
         }
 
-        let crc = Self::calculate_crc(&chunk_type.bytes(), &data);
-
         Ok(Self::new_unchecked(chunk_type, data))
     }
 
