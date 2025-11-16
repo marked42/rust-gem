@@ -1,5 +1,5 @@
+use crate::Result;
 use crate::chunk_type::ChunkType;
-use crate::{Error, Result};
 use crc::{CRC_32_ISO_HDLC, Crc};
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
@@ -81,7 +81,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> Result<Self> {
+    pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> std::result::Result<Self, ChunkError> {
         if data.len() > u32::MAX as usize {
             return Err(ChunkError::DataTooLarge(data.len()).into());
         }
@@ -121,7 +121,7 @@ impl Chunk {
     }
 
     /// can extract a chunk from bytes longer than required length, leaving some bytes unused
-    pub fn from_bytes(value: &[u8]) -> Result<Self> {
+    pub fn from_bytes(value: &[u8]) -> std::result::Result<Self, ChunkError> {
         if value.len() < ChunkLayout::MIN_SIZE {
             return Err(ChunkError::TooShort(value.len()).into());
         }
@@ -215,9 +215,9 @@ impl Chunk {
 }
 
 impl TryFrom<&[u8]> for Chunk {
-    type Error = Error;
+    type Error = ChunkError;
 
-    fn try_from(value: &[u8]) -> Result<Self> {
+    fn try_from(value: &[u8]) -> std::result::Result<Self, ChunkError> {
         Self::from_bytes(value)
     }
 }
