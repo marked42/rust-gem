@@ -1,6 +1,6 @@
+use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use crate::{Result, Error};
 
 pub const BYTES_BIT_MASK: u8 = 0b00100000;
 pub const BYTES_LENGTH: usize = 4;
@@ -12,9 +12,12 @@ pub struct ChunkType {
 }
 
 impl ChunkType {
-
     pub fn bytes(&self) -> Bytes {
         self.bytes
+    }
+
+    pub fn as_str(&self) -> &str {
+        str::from_utf8(&self.bytes).unwrap()
     }
 
     fn is_valid_type(val: u8) -> bool {
@@ -68,7 +71,7 @@ impl FromStr for ChunkType {
             return Err(s.into());
         }
 
-        let code: Bytes =  bytes[0..BYTES_LENGTH].try_into().unwrap();
+        let code: Bytes = bytes[0..BYTES_LENGTH].try_into().unwrap();
 
         code.try_into()
     }
