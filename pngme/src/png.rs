@@ -1,4 +1,4 @@
-use crate::chunk::{self, Chunk, ChunkError};
+use crate::chunk::{Chunk, ChunkError};
 use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -7,12 +7,15 @@ use thiserror::Error;
 pub enum PngError {
     #[error("Too short: received {0} bytes, expected as least {min} bytes", min = Png::SIGNATURE_LENGTH)]
     TooShort(usize),
-    // TODO: using Self::SIGNATURE here reports error
+
     #[error(
-        "Wrong signature: received {0}, expected {signature}",
-        signature = "[137, 80, 78, 71, 13, 10, 26, 10]"
+        "Wrong signature: received {0}, expected {signature:?}",
+        signature = Png::SIGNATURE
     )]
     WrongSignature(String),
+
+    #[error("invalid chunk: {0}")]
+    InvalidChunk(#[from] ChunkError),
 }
 
 struct Png {
@@ -78,11 +81,11 @@ impl TryFrom<&[u8]> for Png {
 
     fn try_from(value: &[u8]) -> Result<Self> {
         if value.len() < Png::SIGNATURE_LENGTH {
-            return Err("too short".into());
+            return Err(PngError::TooShort(value.len()).into());
         }
         let signature = &value[0..Png::SIGNATURE_LENGTH];
         if signature != Png::SIGNATURE {
-            return Err("invalid signature".into());
+            return Err(PngError::WrongSignature(String::from_utf8(signature.to_vec())?).into());
         }
 
         let mut chunks: Vec<Chunk> = Vec::new();
@@ -90,7 +93,7 @@ impl TryFrom<&[u8]> for Png {
         let mut start = Self::SIGNATURE_LENGTH;
         while start < value.len() {
             let value = &value[start..];
-            let chunk = Chunk::try_from(value).map_err(|err| err.to_string())?;
+            let chunk = Chunk::try_from(value).map_err(|err| PngError::InvalidChunk(err))?;
             start = start + chunk.as_bytes().len();
 
             chunks.push(chunk);
