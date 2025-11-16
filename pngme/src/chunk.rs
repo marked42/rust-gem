@@ -10,13 +10,13 @@ const PNG_CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 #[derive(Debug, Error)]
 pub enum ChunkError {
     #[error("Too few bytes: received {0} bytes, expected as least {min} bytes)", min = ChunkLayout::MIN_SIZE)]
-    TooFewBytes(usize),
+    TooShort(usize),
     #[error("Data too large: received {0} bytes, expected as most {max} bytes)", max = u32::MAX)]
     DataTooLarge(usize),
     #[error("Invalid chunk type: {0}")]
     InvalidChunkType(String),
-    #[error("Invalid data length: expected {expected}, got {actual}")]
-    DataLengthMismatch { expected: usize, actual: usize},
+    #[error("Invalid length: expected {expected}, got {actual}")]
+    LengthMismatch { expected: usize, actual: usize },
     #[error("CRC mismatch: expected {expected}, got {actual}")]
     CrcMismatch { expected: u32, actual: u32 },
 }
@@ -103,26 +103,47 @@ impl Chunk {
         }
     }
 
+    pub fn next_chunk_length(value: &[u8]) -> Option<usize> {
+        if value.len() < ChunkLayout::MIN_SIZE {
+            return None;
+        }
+
+        // this is guaranteed success due to previous MIN_SIZE check
+        let length_bytes: [u8; 4] = unsafe { ChunkLayout::length_bytes(value).unwrap_unchecked() };
+        let data_length = u32::from_be_bytes(length_bytes) as usize;
+        let total_length = ChunkLayout::total_length(data_length);
+
+        if value.len() < total_length {
+            return None;
+        }
+
+        Some(total_length)
+    }
+
+    /// can extract a chunk from bytes longer than required length, leaving some bytes unused
     pub fn from_bytes(value: &[u8]) -> Result<Self> {
         if value.len() < ChunkLayout::MIN_SIZE {
-            return Err(ChunkError::TooFewBytes(value.len()).into());
+            return Err(ChunkError::TooShort(value.len()).into());
         }
 
         // this is guaranteed success due to previous MIN_SIZE check
         let length_bytes: [u8; 4] = unsafe { ChunkLayout::length_bytes(value).unwrap_unchecked() };
 
         let data_length = u32::from_be_bytes(length_bytes) as usize;
-        let actual_data_length = value.len() - ChunkLayout::MIN_SIZE;
-        if actual_data_length != data_length {
-            return Err(ChunkError::DataLengthMismatch {
-                expected: data_length,
-                actual: actual_data_length,
-            }.into());
+        let total_length = ChunkLayout::total_length(data_length);
+        if value.len() < total_length {
+            return Err(ChunkError::LengthMismatch {
+                expected: total_length,
+                actual: value.len(),
+            }
+            .into());
         }
 
         // this is guaranteed success due to previous MIN_SIZE check
         let type_bytes = unsafe { ChunkLayout::type_bytes(value).unwrap_unchecked() };
-        let chunk_type: ChunkType = type_bytes.try_into().map_err(|e| ChunkError::InvalidChunkType(format!("{:?}", e)))?;
+        let chunk_type: ChunkType = type_bytes
+            .try_into()
+            .map_err(|e| ChunkError::InvalidChunkType(format!("{:?}", e)))?;
 
         let data: Vec<u8> = ChunkLayout::data_bytes(value, data_length).to_vec();
 
@@ -134,7 +155,8 @@ impl Chunk {
             return Err(ChunkError::CrcMismatch {
                 expected: expected_crc,
                 actual: crc,
-            }.into());
+            }
+            .into());
         }
 
         Ok(Chunk {

@@ -2,6 +2,7 @@
 // mod chunk;
 mod chunk_type;
 mod chunk;
+mod png;
 // mod commands;
 // mod png;
 
