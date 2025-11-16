@@ -1,5 +1,7 @@
+use crate::chunk::Chunk;
 use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
+use std::io::Read;
 use std::str::FromStr;
 
 pub const BYTES_BIT_MASK: u8 = 0b00100000;
@@ -18,10 +20,6 @@ impl ChunkType {
 
     pub fn as_str(&self) -> &str {
         str::from_utf8(&self.bytes).unwrap()
-    }
-
-    fn is_valid_type(val: u8) -> bool {
-        val.is_ascii_alphabetic()
     }
 
     fn is_critical(&self) -> bool {
@@ -44,21 +42,58 @@ impl ChunkType {
     fn is_safe_to_copy(&self) -> bool {
         (self.bytes[3] & BYTES_BIT_MASK) == BYTES_BIT_MASK
     }
+
+    fn validate_bytes_value(value: &[u8]) -> Result<()> {
+        if !value.iter().all(|c| c.is_ascii_alphabetic()) {
+            return Err("Chunk type must contain only ASCII letters"
+                .to_ascii_lowercase()
+                .into());
+        }
+        Ok(())
+    }
+
+    fn validate_bytes_length(value: &[u8]) -> Result<()> {
+        if value.len() != BYTES_LENGTH {
+            return Err(
+                format!("Chunk type must be exactly {} characters", BYTES_LENGTH)
+                    .to_string()
+                    .into(),
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_bytes(value: &[u8]) -> Result<String> {
+        Self::validate_bytes_length(value)?;
+        Self::validate_bytes_value(value)?;
+
+        // unicode 完全兼容 ascii，所以这里unsafe一定会成功
+        Ok(unsafe { String::from_utf8_unchecked(value.to_vec()) })
+    }
+
+    pub fn validate_str(value: &str) -> Result<String> {
+        Self::validate_bytes(value.as_bytes())
+    }
 }
 
 impl TryFrom<Bytes> for ChunkType {
     type Error = Error;
 
     fn try_from(value: Bytes) -> Result<Self> {
-        for i in 0..BYTES_LENGTH {
-            if !Self::is_valid_type(value[i]) {
-                // unicode 完全兼容 ascii，所以这里unsafe一定会成功
-                let code = unsafe { str::from_utf8_unchecked(&value) };
-                return Err(code.into());
-            }
-        }
+        Self::validate_bytes_value(&value)?;
 
         Ok(ChunkType { bytes: value })
+    }
+}
+
+impl TryFrom<&[u8]> for ChunkType {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self> {
+        Self::validate_bytes_length(value)?;
+        let bytes: Bytes = value.try_into()?;
+        bytes.try_into()
     }
 }
 
@@ -66,14 +101,7 @@ impl FromStr for ChunkType {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let bytes = s.as_bytes();
-        if bytes.len() != BYTES_LENGTH {
-            return Err(s.into());
-        }
-
-        let code: Bytes = bytes[0..BYTES_LENGTH].try_into().unwrap();
-
-        code.try_into()
+        s.as_bytes().try_into()
     }
 }
 
