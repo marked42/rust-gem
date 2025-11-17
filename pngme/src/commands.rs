@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
+use pngme::Result;
 use pngme::chunk::Chunk;
 use pngme::chunk_type::ChunkType;
 use pngme::png::Png;
 
-use crate::Result;
 use crate::args::{DecodeArgs, EncodeArgs, PrintArgs, RemoveArgs};
 
 /// Encodes a message into a PNG file and saves the result
