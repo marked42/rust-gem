@@ -1,8 +1,8 @@
 use crate::chunk::{Chunk, ChunkError};
 use crate::{Error, Result};
-use std::fmt::{Display, Formatter, write};
-use std::fs;
-use std::path::PathBuf;
+use std::fmt::{Display, Formatter};
+use std::path::Path;
+use std::{fs, io};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,6 +18,9 @@ pub enum PngError {
 
     #[error("invalid chunk: {0}")]
     InvalidChunk(#[from] ChunkError),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] io::Error),
 }
 
 pub struct Png {
@@ -34,6 +37,22 @@ impl Png {
 
     pub fn from_chunks(chunks: Vec<Chunk>) -> Png {
         Self { chunks }
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Png> {
+        let path = path.as_ref();
+        // 提供更好的错误信息
+        let data = fs::read(path).map_err(|e| PngError::IoError(e))?;
+
+        Self::try_from(data.as_slice())
+            .map_err(|e| format!("Failed to parse PNG from {}: {}", path.display(), e).into())
+    }
+
+    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let path = path.as_ref();
+        let data = self.as_bytes();
+
+        Ok(std::fs::write(path, data)?)
     }
 
     pub fn append_chunk(&mut self, chunk: Chunk) {
@@ -75,17 +94,6 @@ impl Png {
         }
 
         bytes
-    }
-
-    pub fn try_from_path(path: &PathBuf) -> Result<Png> {
-        // 提供更好的错误信息
-        let data =
-            fs::read(path).map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
-
-        let png = Self::try_from(data.as_slice())
-            .map_err(|e| format!("Failed to parse PNG from {}: {}", path.display(), e))?;
-
-        Ok(png)
     }
 }
 
@@ -133,7 +141,6 @@ mod tests {
     use crate::chunk::Chunk;
     use crate::chunk_type::ChunkType;
     use std::convert::TryFrom;
-    use std::str::FromStr;
 
     fn testing_chunks() -> Vec<Chunk> {
         vec![

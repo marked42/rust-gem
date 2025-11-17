@@ -1,7 +1,5 @@
-use crate::chunk::Chunk;
 use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
-use std::io::Read;
 use std::str::FromStr;
 
 pub const BYTES_BIT_MASK: u8 = 0b00100000;
@@ -22,24 +20,24 @@ impl ChunkType {
         str::from_utf8(&self.bytes).unwrap()
     }
 
-    fn is_critical(&self) -> bool {
+    pub fn is_critical(&self) -> bool {
         (self.bytes[0] & BYTES_BIT_MASK) == 0
     }
 
-    fn is_public(&self) -> bool {
+    pub fn is_public(&self) -> bool {
         (self.bytes[1] & BYTES_BIT_MASK) == 0
     }
 
-    fn is_reserved_bit_valid(&self) -> bool {
+    pub fn is_reserved_bit_valid(&self) -> bool {
         (self.bytes[2] & BYTES_BIT_MASK) == 0
     }
 
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         self.is_reserved_bit_valid()
     }
 
     /// bit 5 equals 1 means safe to copy
-    fn is_safe_to_copy(&self) -> bool {
+    pub fn is_safe_to_copy(&self) -> bool {
         (self.bytes[3] & BYTES_BIT_MASK) == BYTES_BIT_MASK
     }
 
