@@ -44,9 +44,7 @@ impl ChunkType {
 
     fn validate_bytes_value(value: &[u8]) -> Result<()> {
         if !value.iter().all(|c| c.is_ascii_alphabetic()) {
-            return Err("Chunk type must contain only ASCII letters"
-                .to_ascii_lowercase()
-                .into());
+            return Err("Chunk type must contain only ASCII letters".to_ascii_lowercase().into());
         }
         Ok(())
     }
