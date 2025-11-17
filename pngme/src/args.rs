@@ -1,9 +1,10 @@
-use clap::Parser;
-use clap::Subcommand;
 use std::path::PathBuf;
 use std::result::Result;
 
-use crate::chunk_type::ChunkType;
+use clap::Parser;
+use clap::Subcommand;
+
+use pngme::chunk_type::ChunkType;
 
 #[derive(Parser, Debug)]
 #[command(name = "pngme", version = "1.0", about = "PNG message encoder/decoder")]

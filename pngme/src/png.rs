@@ -1,9 +1,11 @@
-use crate::chunk::{Chunk, ChunkError};
-use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::{fs, io};
+
 use thiserror::Error;
+
+use crate::chunk::{Chunk, ChunkError};
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum PngError {

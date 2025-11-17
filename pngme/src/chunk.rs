@@ -1,9 +1,10 @@
-use crate::Result;
-use crate::chunk_type::ChunkType;
 use crc::{CRC_32_ISO_HDLC, Crc};
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
 use thiserror::Error;
+
+use crate::Result;
+use crate::chunk_type::ChunkType;
 
 const PNG_CRC: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
