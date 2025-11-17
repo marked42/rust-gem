@@ -62,10 +62,8 @@ impl Png {
     }
 
     pub fn remove_first_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
-        let Some(position) = self
-            .chunks
-            .iter()
-            .position(|chunk| chunk.chunk_type().as_str() == chunk_type)
+        let Some(position) =
+            self.chunks.iter().position(|chunk| chunk.chunk_type().as_str() == chunk_type)
         else {
             return Err(format!("chunk type {chunk_type} not found").into());
         };
@@ -82,9 +80,7 @@ impl Png {
     }
 
     pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
-        self.chunks
-            .iter()
-            .find(|chunk| chunk.chunk_type().as_str() == chunk_type)
+        self.chunks.iter().find(|chunk| chunk.chunk_type().as_str() == chunk_type)
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -176,16 +172,10 @@ mod tests {
 
     #[test]
     fn test_valid_from_bytes() {
-        let chunk_bytes: Vec<u8> = testing_chunks()
-            .into_iter()
-            .flat_map(|chunk| chunk.as_bytes())
-            .collect();
+        let chunk_bytes: Vec<u8> =
+            testing_chunks().into_iter().flat_map(|chunk| chunk.as_bytes()).collect();
 
-        let bytes: Vec<u8> = Png::SIGNATURE
-            .iter()
-            .chain(chunk_bytes.iter())
-            .copied()
-            .collect();
+        let bytes: Vec<u8> = Png::SIGNATURE.iter().chain(chunk_bytes.iter()).copied().collect();
 
         let png = Png::try_from(bytes.as_ref());
 
@@ -194,10 +184,8 @@ mod tests {
 
     #[test]
     fn test_invalid_header() {
-        let chunk_bytes: Vec<u8> = testing_chunks()
-            .into_iter()
-            .flat_map(|chunk| chunk.as_bytes())
-            .collect();
+        let chunk_bytes: Vec<u8> =
+            testing_chunks().into_iter().flat_map(|chunk| chunk.as_bytes()).collect();
 
         let bytes: Vec<u8> = [13, 80, 78, 71, 13, 10, 26, 10]
             .iter()
@@ -212,10 +200,8 @@ mod tests {
 
     #[test]
     fn test_invalid_chunk() {
-        let mut chunk_bytes: Vec<u8> = testing_chunks()
-            .into_iter()
-            .flat_map(|chunk| chunk.as_bytes())
-            .collect();
+        let mut chunk_bytes: Vec<u8> =
+            testing_chunks().into_iter().flat_map(|chunk| chunk.as_bytes()).collect();
 
         #[rustfmt::skip]
         let mut bad_chunk = vec![
@@ -281,16 +267,10 @@ mod tests {
 
     #[test]
     fn test_png_trait_impls() {
-        let chunk_bytes: Vec<u8> = testing_chunks()
-            .into_iter()
-            .flat_map(|chunk| chunk.as_bytes())
-            .collect();
+        let chunk_bytes: Vec<u8> =
+            testing_chunks().into_iter().flat_map(|chunk| chunk.as_bytes()).collect();
 
-        let bytes: Vec<u8> = Png::SIGNATURE
-            .iter()
-            .chain(chunk_bytes.iter())
-            .copied()
-            .collect();
+        let bytes: Vec<u8> = Png::SIGNATURE.iter().chain(chunk_bytes.iter()).copied().collect();
 
         let png: Png = TryFrom::try_from(bytes.as_ref()).unwrap();
 

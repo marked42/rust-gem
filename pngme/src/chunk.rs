@@ -1,6 +1,7 @@
-use crc::{CRC_32_ISO_HDLC, Crc};
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
+
+use crc::{CRC_32_ISO_HDLC, Crc};
 use thiserror::Error;
 
 use crate::Result;
@@ -258,9 +259,7 @@ mod tests {
     #[test]
     fn test_new_chunk() {
         let chunk_type = ChunkType::from_str("RuSt").unwrap();
-        let data = "This is where your secret message will be!"
-            .as_bytes()
-            .to_vec();
+        let data = "This is where your secret message will be!".as_bytes().to_vec();
         let chunk = Chunk::new(chunk_type, data).unwrap();
         assert_eq!(chunk.length(), 42);
         assert_eq!(chunk.crc(), 2882656334);

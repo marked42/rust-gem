@@ -3,7 +3,6 @@ use std::result::Result;
 
 use clap::Parser;
 use clap::Subcommand;
-
 use pngme::chunk_type::ChunkType;
 
 #[derive(Parser, Debug)]
