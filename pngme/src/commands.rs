@@ -2,9 +2,10 @@ use std::str::FromStr;
 
 use crate::Result;
 use crate::args::{DecodeArgs, EncodeArgs, PrintArgs, RemoveArgs};
-use crate::chunk::Chunk;
-use crate::chunk_type::ChunkType;
-use crate::png::Png;
+
+use pngme::chunk::Chunk;
+use pngme::chunk_type::ChunkType;
+use pngme::png::Png;
 
 /// Encodes a message into a PNG file and saves the result
 pub fn encode(args: EncodeArgs) -> Result<()> {

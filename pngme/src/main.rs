@@ -1,15 +1,10 @@
 mod args;
-mod chunk;
-mod chunk_type;
 mod commands;
-mod png;
 
-use args::{Cli, Commands};
-use clap::Parser;
-use commands::{decode, encode, print_chunks, remove};
-
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
-pub type Result<T> = std::result::Result<T, Error>;
+pub use args::{Cli, Commands};
+pub use clap::Parser;
+pub use commands::{decode, encode, print_chunks, remove};
+use pngme::Result;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

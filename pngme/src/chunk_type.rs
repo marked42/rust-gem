@@ -1,6 +1,7 @@
-use crate::{Error, Result};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+
+use crate::{Error, Result};
 
 pub const BYTES_BIT_MASK: u8 = 0b00100000;
 pub const BYTES_LENGTH: usize = 4;
