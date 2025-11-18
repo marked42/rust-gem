@@ -1,10 +1,8 @@
 mod args;
 mod commands;
 
-pub use args::{Cli, Commands};
-pub use clap::Parser;
+pub use args::{Cli, Commands, Parser, Result};
 pub use commands::{decode, encode, print_chunks, remove};
-use pngme::Result;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

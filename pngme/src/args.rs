@@ -1,8 +1,8 @@
 use std::path::PathBuf;
-use std::result::Result;
 
-use clap::Parser;
+pub use clap::Parser;
 use clap::Subcommand;
+pub use pngme::Result;
 use pngme::chunk_type::ChunkType;
 
 #[derive(Parser, Debug)]
@@ -42,7 +42,7 @@ pub struct EncodeArgs {
     pub output_file: Option<PathBuf>,
 }
 
-fn validate_png_file(path: &str) -> Result<PathBuf, String> {
+fn validate_png_file(path: &str) -> std::result::Result<PathBuf, String> {
     let path = PathBuf::from(path);
     if !path.exists() {
         return Err(format!("File doesn't exist: {}", path.display()));
@@ -55,7 +55,7 @@ fn validate_png_file(path: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn validate_chunk_type(chunk_type: &str) -> crate::Result<String> {
+fn validate_chunk_type(chunk_type: &str) -> Result<String> {
     ChunkType::validate_str(chunk_type)
 }
 
