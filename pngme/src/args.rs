@@ -9,11 +9,11 @@ use pngme::chunk_type::ChunkType;
 #[command(name = "pngme", version = "1.0", about = "PNG message encoder/decoder")]
 pub struct Cli {
     #[command(subcommand)]
-    pub commands: Commands,
+    pub command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Commands {
+pub enum Command {
     /// Encode a message into a PNG file
     Encode(EncodeArgs),
 
