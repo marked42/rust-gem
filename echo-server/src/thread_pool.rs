@@ -1,9 +1,9 @@
 use std::sync::{
-    mpsc::{self, Sender},
     Arc, Mutex,
+    mpsc::{self, Sender},
 };
 
-use crate::echo::{worker::Job, Worker};
+use crate::worker::{Job, Worker};
 
 pub struct ThreadPool {
     sender: Option<Sender<Job>>,

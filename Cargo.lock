@@ -374,6 +374,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "echo-server"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -849,9 +856,6 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 [[package]]
 name = "rust_gem"
 version = "0.1.0"
-dependencies = [
- "tokio",
-]
 
 [[package]]
 name = "rustversion"
