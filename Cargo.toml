@@ -4,14 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["echo", "my-redis", "pngme"]
-
-
-# [dependencies]
-
-[[example]]
-name = "async"
-path = "src/examples/async.rs"
+members = ["asyncs","echo", "my-redis", "pngme"]
 
 [dependencies]
 tokio = { version = "1.48.0", features = ["full"] }
