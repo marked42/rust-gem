@@ -1,6 +1,7 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader, Result, Write},
+    io::{self, BufRead, BufReader, Lines, Result, Write},
+    ops::Range,
 };
 
 use clap::{Arg, ArgAction, Command};
@@ -67,10 +68,10 @@ fn main() -> Result<()> {
 
     let reader = prepare_input(input)?;
     let (output_file, is_terminal) = prepare_output(output_file)?;
-    let matched_lines = find_matched_lines(reader, &pattern)?;
+    let matched_lines = MatchedWords::new(reader, pattern);
 
     let color = *color && is_terminal;
-    process_lines(matched_lines, color, *output_line_no, output_file)?;
+    output_matched_words(matched_lines, color, *output_line_no, output_file)?;
 
     Ok(())
 }
@@ -97,62 +98,138 @@ fn prepare_output(output_file: Option<&String>) -> Result<(Box<dyn Write>, bool)
     }
 }
 
-fn find_matched_lines(
-    input: Box<dyn BufRead>,
-    pattern: &Regex,
-) -> Result<Vec<Vec<(String, bool)>>> {
-    let mut lines = Vec::new();
-
-    for line in input.lines() {
-        let line = line?;
-        if !pattern.is_match(&line) {
-            continue;
-        }
-        let mut line_vec: Vec<(String, bool)> = Vec::new();
-
-        let mut iter = pattern.find_iter(&line);
-        let mut prev: usize = 0;
-        while let Some(m) = iter.next() {
-            if m.start() - prev > 0 {
-                line_vec.push((line[prev..m.start()].to_string(), false));
-            }
-            line_vec.push((m.as_str().to_string(), true));
-            prev = m.end();
-        }
-
-        if line.len() - prev > 0 {
-            line_vec.push((line[prev..line.len()].to_string(), false));
-        }
-
-        lines.push(line_vec);
-    }
-
-    Ok(lines)
+struct MatchedWords {
+    iter: Lines<Box<dyn BufRead>>,
+    pattern: Regex,
+    line: Option<String>,
+    line_no: usize,
+    start: usize,
 }
 
-// TODO: iterator on matched line & word
-fn process_lines(
-    lines: Vec<Vec<(String, bool)>>,
+impl MatchedWords {
+    fn new(input: Box<dyn BufRead>, pattern: Regex) -> Self {
+        Self {
+            iter: input.lines(),
+            pattern,
+            line: None,
+            line_no: 0,
+            start: 0,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct MatchedWord {
+    line: String,
+    line_no: usize,
+    range: Range<usize>,
+}
+
+impl Iterator for MatchedWords {
+    type Item = Result<MatchedWord>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(line) = &self.line
+                && !line.is_empty()
+                && self.start < line.len() - 1
+            {
+                let matched = self.pattern.find_at(line, self.start);
+                if let Some(matched) = matched {
+                    self.start = matched.end();
+
+                    return Some(Ok(MatchedWord {
+                        line: line.clone(),
+                        line_no: self.line_no,
+                        range: matched.range(),
+                    }));
+                } else {
+                    self.start = 0;
+                    self.line = None;
+                }
+            }
+
+            match self.iter.next() {
+                Some(line) => match line {
+                    Ok(line) => {
+                        self.line = Some(line);
+                        self.start = 0;
+                        self.line_no += 1;
+                    }
+                    Err(e) => {
+                        return Some(Err(e));
+                    }
+                },
+                None => {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+fn output_matched_words(
+    matched_words: MatchedWords,
     color: bool,
     output_line_no: bool,
     mut output_file: Box<dyn Write>,
 ) -> Result<()> {
-    for (index, line) in lines.iter().enumerate() {
-        let line_no = index + 1;
+    let mut last_line = String::new();
+    let mut current_line_no: Option<usize> = None;
+    let mut prev_word = 0usize;
 
-        if output_line_no {
-            write!(output_file, "[{line_no}]")?;
-        }
-        for (text, is_match) in line {
-            if *is_match && color {
-                write!(output_file, "{}", text.as_str().red())?;
-            } else {
-                write!(output_file, "{}", text)?;
+    for word in matched_words {
+        let MatchedWord {
+            line,
+            line_no,
+            range,
+        } = word?;
+
+        match current_line_no {
+            None => {
+                current_line_no = Some(line_no);
+
+                last_line = line.clone();
+
+                // newline
+                if output_line_no {
+                    write!(output_file, "[{line_no}]")?;
+                }
+            }
+            Some(no) => {
+                if no != line_no {
+                    if last_line.len() > prev_word {
+                        write!(output_file, "{}", &last_line[prev_word..])?;
+                    }
+                    writeln!(output_file, "")?;
+
+                    last_line = line.clone();
+                    current_line_no = Some(line_no);
+                    prev_word = 0;
+
+                    // newline
+                    if output_line_no {
+                        write!(output_file, "[{line_no}]")?;
+                    }
+                }
             }
         }
 
-        writeln!(output_file, "")?;
+        if range.start > prev_word {
+            write!(output_file, "{}", &line[prev_word..range.start])?;
+        }
+
+        prev_word = range.end;
+        if color {
+            write!(output_file, "{}", line[range].red())?;
+        } else {
+            write!(output_file, "{}", &line[range])?;
+        }
     }
+    if last_line.len() > prev_word {
+        write!(output_file, "{}", &last_line[prev_word..])?;
+    }
+    writeln!(output_file, "")?;
 
     Ok(())
 }
