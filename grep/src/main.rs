@@ -10,6 +10,9 @@ use regex::Regex;
 
 const STDIN_MARKER: &str = "-";
 
+type InputReader = Box<dyn BufRead>;
+type OutputWriter = Box<dyn Write>;
+
 fn main() -> Result<()> {
     let args = Command::new("grep")
         .version("1.0")
@@ -104,7 +107,7 @@ impl OutputFormat {
     }
 }
 
-fn prepare_input(input: &str) -> Result<Box<dyn BufRead>> {
+fn prepare_input(input: &str) -> Result<InputReader> {
     if input == STDIN_MARKER {
         return Ok(Box::new(io::stdin().lock()));
     }
@@ -118,7 +121,7 @@ fn prepare_input(input: &str) -> Result<Box<dyn BufRead>> {
     Ok(Box::new(BufReader::new(file)))
 }
 
-fn prepare_output(output_file: Option<&String>) -> Result<(Box<dyn Write>, bool)> {
+fn prepare_output(output_file: Option<&String>) -> Result<(OutputWriter, bool)> {
     match output_file {
         Some(f) if !f.is_empty() => Ok((Box::new(File::create(f)?), false)),
         _ => Ok((Box::new(io::stdout()), true)),
@@ -126,7 +129,7 @@ fn prepare_output(output_file: Option<&String>) -> Result<(Box<dyn Write>, bool)
 }
 
 struct MatchedWords {
-    iter: Lines<Box<dyn BufRead>>,
+    iter: Lines<InputReader>,
     pattern: Regex,
     current_line: Option<String>,
     line_no: usize,
@@ -134,7 +137,7 @@ struct MatchedWords {
 }
 
 impl MatchedWords {
-    fn new(input: Box<dyn BufRead>, pattern: Regex) -> Self {
+    fn new(input: InputReader, pattern: Regex) -> Self {
         Self {
             iter: input.lines(),
             pattern,
@@ -226,7 +229,8 @@ impl LineState {
     fn process_word(
         &mut self,
         word: MatchedWord,
-        output: &mut dyn Write,
+        // TODO: is &mut dyn Write better ?
+        output: &mut OutputWriter,
         format: &OutputFormat,
     ) -> Result<()> {
         if self.current_line_no != Some(word.line_no) {
@@ -257,7 +261,7 @@ impl LineState {
         &mut self,
         line_no: usize,
         line: &str,
-        output: &mut dyn Write,
+        output: &mut OutputWriter,
         format: &OutputFormat,
     ) -> Result<()> {
         self.current_line_no = Some(line_no);
@@ -272,7 +276,7 @@ impl LineState {
         Ok(())
     }
 
-    fn finish_line(&mut self, output: &mut dyn Write) -> Result<()> {
+    fn finish_line(&mut self, output: &mut OutputWriter) -> Result<()> {
         if let Some(line_no) = self.current_line_no {
             if self.last_word_end < self.current_line.len() {
                 write!(output, "{}", &self.current_line[self.last_word_end..])?;
@@ -292,7 +296,7 @@ impl LineState {
 
 fn output_matched_words(
     matched_words: MatchedWords,
-    output: &mut dyn Write,
+    output: &mut OutputWriter,
     output_format: &OutputFormat,
 ) -> Result<()> {
     let mut current_line_state = LineState::new();
