@@ -67,10 +67,10 @@ fn main() -> Result<()> {
     let words = MatchedWords::new(reader, pattern);
 
     let output_file = args.get_one::<String>("output");
-    let (output_file, is_terminal) = prepare_output(output_file)?;
+    let (mut output, is_terminal) = prepare_output(output_file)?;
     let output_format = get_output_format(&args, is_terminal);
 
-    output_matched_words(words, output_file, output_format)?;
+    output_matched_words(words, &mut output, &output_format)?;
 
     Ok(())
 }
@@ -188,68 +188,106 @@ impl Iterator for MatchedWords {
     }
 }
 
+struct LineState {
+    current_line_no: Option<usize>,
+    current_line: String,
+    last_word_end: usize,
+}
+
+impl LineState {
+    fn new() -> Self {
+        Self {
+            current_line: String::new(),
+            current_line_no: None,
+            last_word_end: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.current_line_no = None;
+        self.current_line.clear();
+        self.last_word_end = 0;
+    }
+
+    fn process_word(
+        &mut self,
+        word: MatchedWord,
+        output: &mut dyn Write,
+        format: &OutputFormat,
+    ) -> Result<()> {
+        if self.current_line_no != Some(word.line_no) {
+            self.finish_line(output)?;
+            self.start_new_line(word.line_no, &word.line, output, format)?;
+        }
+
+        if word.range.start > self.last_word_end {
+            write!(
+                output,
+                "{}",
+                &self.current_line[self.last_word_end..word.range.start]
+            )?;
+        }
+
+        let matched_text = &self.current_line[word.range.clone()];
+        if format.color {
+            write!(output, "{}", matched_text.red())?;
+        } else {
+            write!(output, "{}", matched_text)?;
+        }
+
+        self.last_word_end = word.range.end;
+        Ok(())
+    }
+
+    fn start_new_line(
+        &mut self,
+        line_no: usize,
+        line: &str,
+        output: &mut dyn Write,
+        format: &OutputFormat,
+    ) -> Result<()> {
+        self.current_line_no = Some(line_no);
+        self.current_line = line.to_string();
+        self.last_word_end = 0;
+
+        // TODO: line no width should be same
+        if format.line_number {
+            write!(output, "[{line_no}]")?
+        }
+
+        Ok(())
+    }
+
+    fn finish_line(&mut self, output: &mut dyn Write) -> Result<()> {
+        if let Some(line_no) = self.current_line_no {
+            if self.last_word_end < self.current_line.len() {
+                write!(output, "{}", &self.current_line[self.last_word_end..])?;
+            }
+
+            // output newline at the end of each line starting from first line
+            if line_no > 0 {
+                writeln!(output)?;
+            }
+
+            self.reset();
+        }
+
+        Ok(())
+    }
+}
+
 fn output_matched_words(
     matched_words: MatchedWords,
-    mut output_file: Box<dyn Write>,
-    output_format: OutputFormat,
+    output: &mut dyn Write,
+    output_format: &OutputFormat,
 ) -> Result<()> {
-    let mut last_line = String::new();
-    let mut current_line_no: Option<usize> = None;
-    let mut prev_word_end = 0usize;
+    let mut current_line_state = LineState::new();
 
-    // TODO: more declarative way ?
-    for word in matched_words {
-        let MatchedWord {
-            line,
-            line_no,
-            range,
-        } = word?;
-
-        match current_line_no {
-            None => {
-                current_line_no = Some(line_no);
-
-                last_line = line.clone();
-
-                // newline
-                if output_format.line_number {
-                    write!(output_file, "[{line_no}]")?;
-                }
-            }
-            Some(no) => {
-                if no != line_no {
-                    if last_line.len() > prev_word_end {
-                        write!(output_file, "{}", &last_line[prev_word_end..])?;
-                    }
-                    writeln!(output_file, "")?;
-
-                    last_line = line.clone();
-                    current_line_no = Some(line_no);
-                    prev_word_end = 0;
-
-                    // newline
-                    if output_format.line_number {
-                        write!(output_file, "[{line_no}]")?;
-                    }
-                }
-            }
-        }
-
-        if range.start > prev_word_end {
-            write!(output_file, "{}", &line[prev_word_end..range.start])?;
-        }
-
-        prev_word_end = range.end;
-        if output_format.color {
-            write!(output_file, "{}", line[range].red())?;
-        } else {
-            write!(output_file, "{}", &line[range])?;
-        }
+    for word_result in matched_words {
+        let word = word_result?;
+        current_line_state.process_word(word, output, output_format)?;
     }
-    if last_line.len() > prev_word_end {
-        write!(output_file, "{}", &last_line[prev_word_end..])?;
-    }
-    writeln!(output_file, "")?;
+    current_line_state.finish_line(output)?;
 
     Ok(())
 }
