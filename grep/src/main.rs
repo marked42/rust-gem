@@ -68,26 +68,40 @@ fn main() -> Result<()> {
 
     let output_file = args.get_one::<String>("output");
     let (mut output, is_terminal) = prepare_output(output_file)?;
-    let output_format = get_output_format(&args, is_terminal);
+    let output_format = OutputFormat::from_args(&args, is_terminal);
 
     output_matched_words(words, &mut output, &output_format)?;
 
     Ok(())
 }
 
-fn get_output_format(args: &ArgMatches, is_terminal: bool) -> OutputFormat {
-    let line_number = args.get_flag("line_number");
-    let color = args.get_flag("color");
-
-    OutputFormat {
-        color: color && is_terminal,
-        line_number,
-    }
-}
-
+#[derive(Debug, Default)]
 struct OutputFormat {
     color: bool,
     line_number: bool,
+}
+
+impl OutputFormat {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn with_color(mut self, color: bool) -> Self {
+        self.color = color;
+        self
+    }
+
+    fn with_line_number(mut self, line_number: bool) -> Self {
+        self.line_number = line_number;
+        self
+    }
+
+    fn from_args(args: &ArgMatches, is_terminal: bool) -> Self {
+        let line_number = args.get_flag("line_number");
+        let color = args.get_flag("color") && is_terminal;
+
+        Self::new().with_color(color).with_line_number(line_number)
+    }
 }
 
 fn prepare_input(input: &str) -> Result<Box<dyn BufRead>> {
