@@ -114,9 +114,9 @@ fn prepare_output(output_file: Option<&String>) -> Result<(Box<dyn Write>, bool)
 struct MatchedWords {
     iter: Lines<Box<dyn BufRead>>,
     pattern: Regex,
-    line: Option<String>,
+    current_line: Option<String>,
     line_no: usize,
-    start: usize,
+    search_start: usize,
 }
 
 impl MatchedWords {
@@ -124,9 +124,41 @@ impl MatchedWords {
         Self {
             iter: input.lines(),
             pattern,
-            line: None,
+            current_line: None,
             line_no: 0,
-            start: 0,
+            search_start: 0,
+        }
+    }
+
+    fn next_match_from_current_line(&mut self) -> Option<MatchedWord> {
+        let line = self.current_line.as_ref()?;
+
+        if self.search_start >= line.len() {
+            self.search_start = 0;
+            self.current_line = None;
+            return None;
+        }
+
+        let matched = self.pattern.find_at(line, self.search_start)?;
+        self.search_start = matched.end();
+
+        Some(MatchedWord {
+            line: line.clone(),
+            line_no: self.line_no,
+            range: matched.range(),
+        })
+    }
+
+    fn read_next_line(&mut self) -> Option<Result<String>> {
+        match self.iter.next() {
+            Some(Ok(line)) => {
+                self.current_line = Some(line.clone());
+                self.search_start = 0;
+                self.line_no += 1;
+
+                Some(Ok(line))
+            }
+            other => other,
         }
     }
 }
@@ -143,39 +175,14 @@ impl Iterator for MatchedWords {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(line) = &self.line
-                && !line.is_empty()
-                && self.start < line.len() - 1
-            {
-                let matched = self.pattern.find_at(line, self.start);
-                if let Some(matched) = matched {
-                    self.start = matched.end();
-
-                    return Some(Ok(MatchedWord {
-                        line: line.clone(),
-                        line_no: self.line_no,
-                        range: matched.range(),
-                    }));
-                } else {
-                    self.start = 0;
-                    self.line = None;
-                }
+            if let Some(matched) = self.next_match_from_current_line() {
+                return Some(Ok(matched));
             }
 
-            match self.iter.next() {
-                Some(line) => match line {
-                    Ok(line) => {
-                        self.line = Some(line);
-                        self.start = 0;
-                        self.line_no += 1;
-                    }
-                    Err(e) => {
-                        return Some(Err(e));
-                    }
-                },
-                None => {
-                    return None;
-                }
+            match self.read_next_line() {
+                Some(Ok(_)) => continue,
+                Some(Err(e)) => return Some(Err(e)),
+                None => return None,
             }
         }
     }
