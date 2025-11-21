@@ -4,7 +4,7 @@ use std::{
     ops::Range,
 };
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use regex::Regex;
 
@@ -34,14 +34,12 @@ fn main() -> Result<()> {
                 .help("output line number")
                 .short('l')
                 .long("line-number")
-                .default_value("false")
                 .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("color")
                 .short('c')
                 .long("color")
-                .default_value("false")
                 .action(ArgAction::SetTrue)
                 .help("works only in terminal"),
         )
@@ -54,30 +52,37 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let pattern = args.get_one::<String>("pattern").expect("pattern is not provided");
-    let pattern = Regex::new(pattern).unwrap();
+    // pattern is required, safe to unwrap
+    let pattern = args.get_one::<String>("pattern").unwrap();
+    let pattern = Regex::new(pattern).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Invalid regex pattern: {}", e),
+        )
+    })?;
 
-    let input = args
-        .get_one::<String>("input")
-        .expect("input is not provided, '-' or a file path");
-
-    let line_number = args.get_one::<bool>("line_number").unwrap_or(&false);
-    let color = args.get_one::<bool>("color").unwrap_or(&false);
+    // input is required, safe to unwrap
+    let input = args.get_one::<String>("input").unwrap();
+    let reader = prepare_input(input)?;
+    let words = MatchedWords::new(reader, pattern);
 
     let output_file = args.get_one::<String>("output");
     let (output_file, is_terminal) = prepare_output(output_file)?;
-
-    let output_format = OutputFormat {
-        color: *color && is_terminal,
-        line_number: *line_number,
-    };
-
-    let reader = prepare_input(input)?;
-    let words = MatchedWords::new(reader, pattern);
+    let output_format = get_output_format(&args, is_terminal);
 
     output_matched_words(words, output_file, output_format)?;
 
     Ok(())
+}
+
+fn get_output_format(args: &ArgMatches, is_terminal: bool) -> OutputFormat {
+    let line_number = args.get_flag("line_number");
+    let color = args.get_flag("color");
+
+    OutputFormat {
+        color: color && is_terminal,
+        line_number,
+    }
 }
 
 struct OutputFormat {
@@ -86,24 +91,23 @@ struct OutputFormat {
 }
 
 fn prepare_input(input: &str) -> Result<Box<dyn BufRead>> {
-    let reader: Box<dyn BufRead> = if input == STDIN_MARKER {
-        let stdin = io::stdin();
-        let reader = stdin.lock();
-        Box::new(reader)
-    } else {
-        let f = File::open(input)?;
-        let reader = BufReader::new(f);
-        Box::new(reader)
-    };
+    if input == STDIN_MARKER {
+        return Ok(Box::new(io::stdin().lock()));
+    }
 
-    Ok(reader)
+    let file = File::open(input).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Cannot open file '{}': {}", input, e),
+        )
+    })?;
+    Ok(Box::new(BufReader::new(file)))
 }
 
 fn prepare_output(output_file: Option<&String>) -> Result<(Box<dyn Write>, bool)> {
-    if let Some(f) = output_file.filter(|s| !s.is_empty()) {
-        Ok((Box::new(File::create(f)?), false))
-    } else {
-        Ok((Box::new(io::stdout()), true))
+    match output_file {
+        Some(f) if !f.is_empty() => Ok((Box::new(File::create(f)?), false)),
+        _ => Ok((Box::new(io::stdout()), true)),
     }
 }
 
