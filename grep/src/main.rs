@@ -2,10 +2,12 @@ use std::{
     fs::File,
     io::{self, BufRead, BufReader, Lines, Result, Write},
     ops::Range,
+    time::Instant,
 };
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
+use humantime::format_duration;
 use regex::Regex;
 
 const STDIN_MARKER: &str = "-";
@@ -53,6 +55,12 @@ fn main() -> Result<()> {
                 .long("output")
                 .action(ArgAction::Set),
         )
+        .arg(
+            Arg::new("report")
+                .help("output report of found matches count and used time")
+                .long("report")
+                .action(ArgAction::SetTrue),
+        )
         .get_matches();
 
     // pattern is required, safe to unwrap
@@ -82,6 +90,7 @@ fn main() -> Result<()> {
 struct OutputFormat {
     color: bool,
     line_number: bool,
+    report: bool,
 }
 
 impl OutputFormat {
@@ -99,11 +108,17 @@ impl OutputFormat {
         self
     }
 
+    fn with_report(mut self, report: bool) -> Self {
+        self.report = report;
+        self
+    }
+
     fn from_args(args: &ArgMatches, is_terminal: bool) -> Self {
         let line_number = args.get_flag("line_number");
         let color = args.get_flag("color") && is_terminal;
+        let report = args.get_flag("report");
 
-        Self::new().with_color(color).with_line_number(line_number)
+        Self::new().with_color(color).with_line_number(line_number).with_report(report)
     }
 }
 
@@ -299,13 +314,26 @@ fn output_matched_words(
     output: &mut OutputWriter,
     output_format: &OutputFormat,
 ) -> Result<()> {
+    let start = Instant::now();
+    let mut count = 0;
     let mut current_line_state = LineState::new();
 
     for word_result in matched_words {
         let word = word_result?;
+        count += 1;
         current_line_state.process_word(word, output, output_format)?;
     }
     current_line_state.finish_line(output)?;
+
+    if output_format.report {
+        let duration = start.elapsed();
+
+        println!(
+            "Found {} matches in {}",
+            count.to_string().green(),
+            format_duration(duration)
+        );
+    }
 
     Ok(())
 }
