@@ -15,7 +15,22 @@ const STDIN_MARKER: &str = "-";
 type InputReader = Box<dyn BufRead>;
 type OutputWriter = Box<dyn Write>;
 
+// TODO: custom error
+
 fn main() -> Result<()> {
+    let (input, regex, output, format) = parse_args()?;
+
+    let searcher = PatternSearcher::try_from(&input)?;
+    let words = searcher.find_matches(regex)?;
+
+    let mut reporter = MatchesReporter::try_from(output, format)?;
+    reporter.report(words)?;
+
+    Ok(())
+}
+
+// TODO: use derive macro
+fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
     let args = Command::new("grep")
         .version("1.0")
         .about("search for patterns")
@@ -53,11 +68,13 @@ fn main() -> Result<()> {
                 .help("output file, default is stdout")
                 .short('o')
                 .long("output")
+                .default_value(STDIN_MARKER)
                 .action(ArgAction::Set),
         )
         .arg(
             Arg::new("report")
                 .help("output report of found matches count and used time")
+                .short('r')
                 .long("report")
                 .action(ArgAction::SetTrue),
         )
@@ -65,7 +82,7 @@ fn main() -> Result<()> {
 
     // pattern is required, safe to unwrap
     let pattern = args.get_one::<String>("pattern").unwrap();
-    let pattern = Regex::new(pattern).map_err(|e| {
+    let regex = Regex::new(pattern).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("Invalid regex pattern: {}", e),
@@ -74,72 +91,41 @@ fn main() -> Result<()> {
 
     // input is required, safe to unwrap
     let input = args.get_one::<String>("input").unwrap();
-    let reader = prepare_input(input)?;
-    let words = MatchedWords::new(reader, pattern);
+    let output = parse_output(&args);
+    let format = OutputFormat::from_args(&args);
 
-    let output_file = args.get_one::<String>("output");
-    let (mut output, is_terminal) = prepare_output(output_file)?;
-    let output_format = OutputFormat::from_args(&args, is_terminal);
-
-    output_matched_words(words, &mut output, &output_format)?;
-
-    Ok(())
+    // TODO: remove clone
+    Ok((input.clone(), regex, output.clone(), format))
 }
 
-#[derive(Debug, Default)]
-struct OutputFormat {
-    color: bool,
-    line_number: bool,
-    report: bool,
+struct PatternSearcher {
+    reader: InputReader,
 }
 
-impl OutputFormat {
-    fn new() -> Self {
-        Self::default()
+impl PatternSearcher {
+    fn try_from(input: &str) -> Result<Self> {
+        Ok(Self {
+            reader: Self::prepare_reader(input)?,
+        })
     }
 
-    fn with_color(mut self, color: bool) -> Self {
-        self.color = color;
-        self
+    fn find_matches(self, regex: Regex) -> Result<MatchedWords> {
+        let words = MatchedWords::new(self.reader, regex);
+        Ok(words)
     }
 
-    fn with_line_number(mut self, line_number: bool) -> Self {
-        self.line_number = line_number;
-        self
-    }
+    fn prepare_reader(input: &str) -> Result<InputReader> {
+        if input == STDIN_MARKER {
+            return Ok(Box::new(io::stdin().lock()));
+        }
 
-    fn with_report(mut self, report: bool) -> Self {
-        self.report = report;
-        self
-    }
-
-    fn from_args(args: &ArgMatches, is_terminal: bool) -> Self {
-        let line_number = args.get_flag("line_number");
-        let color = args.get_flag("color") && is_terminal;
-        let report = args.get_flag("report");
-
-        Self::new().with_color(color).with_line_number(line_number).with_report(report)
-    }
-}
-
-fn prepare_input(input: &str) -> Result<InputReader> {
-    if input == STDIN_MARKER {
-        return Ok(Box::new(io::stdin().lock()));
-    }
-
-    let file = File::open(input).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Cannot open file '{}': {}", input, e),
-        )
-    })?;
-    Ok(Box::new(BufReader::new(file)))
-}
-
-fn prepare_output(output_file: Option<&String>) -> Result<(OutputWriter, bool)> {
-    match output_file {
-        Some(f) if !f.is_empty() => Ok((Box::new(File::create(f)?), false)),
-        _ => Ok((Box::new(io::stdout()), true)),
+        let file = File::open(input).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Cannot open file '{}': {}", input, e),
+            )
+        })?;
+        Ok(Box::new(BufReader::new(file)))
     }
 }
 
@@ -218,6 +204,98 @@ impl Iterator for MatchedWords {
             }
         }
     }
+}
+
+struct MatchesReporter {
+    output: OutputWriter,
+    format: OutputFormat,
+}
+
+impl MatchesReporter {
+    fn try_from(output: String, format: OutputFormat) -> Result<Self> {
+        Ok(Self {
+            output: Self::prepare_output(&output)?,
+            format,
+        })
+    }
+
+    fn prepare_output(output: &str) -> Result<OutputWriter> {
+        if output == STDIN_MARKER {
+            Ok(Box::new(io::stdout()))
+        } else {
+            Ok(Box::new(File::create(output)?))
+        }
+    }
+
+    fn report(&mut self, matched_words: MatchedWords) -> Result<()> {
+        let start = Instant::now();
+        let mut count = 0;
+        let mut current_line_state = LineState::new();
+
+        for word_result in matched_words {
+            let word = word_result?;
+            count += 1;
+            current_line_state.process_word(word, &mut self.output, &self.format)?;
+        }
+        current_line_state.finish_line(&mut self.output)?;
+
+        if self.format.report {
+            let duration = start.elapsed();
+
+            println!(
+                "Found {} matches in {}",
+                count.to_string().green(),
+                format_duration(duration)
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct OutputFormat {
+    color: bool,
+    line_number: bool,
+    report: bool,
+}
+
+impl OutputFormat {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn with_color(mut self, color: bool) -> Self {
+        self.color = color;
+        self
+    }
+
+    fn with_line_number(mut self, line_number: bool) -> Self {
+        self.line_number = line_number;
+        self
+    }
+
+    fn with_report(mut self, report: bool) -> Self {
+        self.report = report;
+        self
+    }
+
+    fn from_args(args: &ArgMatches) -> Self {
+        let line_number = args.get_flag("line_number");
+        let report = args.get_flag("report");
+
+        // output has default value '-', safe to unwrap
+        let output = parse_output(args);
+        let is_terminal = output == STDIN_MARKER;
+        let color = args.get_flag("color") && is_terminal;
+
+        Self::new().with_color(color).with_line_number(line_number).with_report(report)
+    }
+}
+
+fn parse_output(args: &ArgMatches) -> String {
+    // output has default value '-', safe to unwrap
+    args.get_one::<String>("output").unwrap().clone()
 }
 
 struct LineState {
@@ -307,33 +385,4 @@ impl LineState {
 
         Ok(())
     }
-}
-
-fn output_matched_words(
-    matched_words: MatchedWords,
-    output: &mut OutputWriter,
-    output_format: &OutputFormat,
-) -> Result<()> {
-    let start = Instant::now();
-    let mut count = 0;
-    let mut current_line_state = LineState::new();
-
-    for word_result in matched_words {
-        let word = word_result?;
-        count += 1;
-        current_line_state.process_word(word, output, output_format)?;
-    }
-    current_line_state.finish_line(output)?;
-
-    if output_format.report {
-        let duration = start.elapsed();
-
-        println!(
-            "Found {} matches in {}",
-            count.to_string().green(),
-            format_duration(duration)
-        );
-    }
-
-    Ok(())
 }
