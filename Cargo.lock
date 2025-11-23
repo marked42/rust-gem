@@ -578,6 +578,7 @@ dependencies = [
  "crossterm",
  "humantime",
  "regex",
+ "thiserror",
 ]
 
 [[package]]
