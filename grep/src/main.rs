@@ -334,13 +334,13 @@ impl LineState {
         format: &OutputFormat,
     ) -> Result<()> {
         let matched_text = &self.current_line[word.range.clone()];
-        if format.color {
-            write!(output, "{}", matched_text.red()).map_err(GrepError::from)?;
-        } else {
-            write!(output, "{}", matched_text).map_err(GrepError::from)?;
-        }
 
-        Ok(())
+        if format.color {
+            write!(output, "{}", matched_text.red())
+        } else {
+            write!(output, "{}", matched_text)
+        }
+        .map_err(GrepError::from)
     }
 
     fn advance_last_word(&mut self, end: usize) {
