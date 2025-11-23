@@ -11,7 +11,7 @@ use humantime::format_duration;
 use regex::Regex;
 use thiserror::Error;
 
-const STDIN_MARKER: &str = "-";
+const STD_IN_OUT_MARKER: &str = "-";
 
 type InputReader = Box<dyn BufRead>;
 type OutputWriter = Box<dyn Write>;
@@ -28,11 +28,11 @@ pub enum GrepError {
 fn main() -> Result<()> {
     let (input, regex, output, format) = parse_args()?;
 
-    let searcher = PatternSearcher::try_from(&input)?;
-    let words = searcher.find_matches(regex)?;
+    let searcher = PatternSearcher::try_new(&input)?;
+    let matches = searcher.find_matches(regex)?;
 
-    let mut reporter = MatchesReporter::try_from(output, format)?;
-    reporter.report(words)?;
+    let mut reporter = MatchReporter::try_new(output, format)?;
+    reporter.report(matches)?;
 
     Ok(())
 }
@@ -51,10 +51,10 @@ fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
         .arg(
             Arg::new("input")
                 .help(format!(
-                    "File to search (use '{STDIN_MARKER}' for standard input))",
+                    "File to search (use '{STD_IN_OUT_MARKER}' for standard input))",
                 ))
                 .required(true)
-                .default_value(STDIN_MARKER)
+                .default_value(STD_IN_OUT_MARKER)
                 .action(ArgAction::Set),
         )
         .arg(
@@ -76,7 +76,7 @@ fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
                 .help("output file, default is stdout")
                 .short('o')
                 .long("output")
-                .default_value(STDIN_MARKER)
+                .default_value(STD_IN_OUT_MARKER)
                 .action(ArgAction::Set),
         )
         .arg(
@@ -105,39 +105,34 @@ struct PatternSearcher {
 }
 
 impl PatternSearcher {
-    fn try_from(input: &str) -> Result<Self> {
-        Ok(Self {
-            reader: Self::prepare_reader(input)?,
-        })
+    fn try_new(input: &str) -> Result<Self> {
+        let reader: InputReader = if input == STD_IN_OUT_MARKER {
+            Box::new(io::stdin().lock())
+        } else {
+            let file = File::open(input).map_err(GrepError::from)?;
+            Box::new(BufReader::new(file))
+        };
+
+        Ok(Self { reader })
     }
 
-    fn find_matches(self, regex: Regex) -> Result<MatchedWords> {
-        let words = MatchedWords::new(self.reader, regex);
-        Ok(words)
-    }
-
-    fn prepare_reader(input: &str) -> Result<InputReader> {
-        if input == STDIN_MARKER {
-            return Ok(Box::new(io::stdin().lock()));
-        }
-
-        let file = File::open(input).map_err(GrepError::from)?;
-        Ok(Box::new(BufReader::new(file)))
+    fn find_matches(self, regex: Regex) -> Result<MatchIterator> {
+        Ok(MatchIterator::new(self.reader, regex))
     }
 }
 
-struct MatchedWords {
-    iter: Lines<InputReader>,
+struct MatchIterator {
+    lines: Lines<InputReader>,
     pattern: Regex,
     current_line: Option<String>,
     line_no: usize,
     search_start: usize,
 }
 
-impl MatchedWords {
+impl MatchIterator {
     fn new(input: InputReader, pattern: Regex) -> Self {
         Self {
-            iter: input.lines(),
+            lines: input.lines(),
             pattern,
             current_line: None,
             line_no: 0,
@@ -145,7 +140,7 @@ impl MatchedWords {
         }
     }
 
-    fn next_match_from_current_line(&mut self) -> Option<MatchedWord> {
+    fn next_match_from_current_line(&mut self) -> Option<Match> {
         let line = self.current_line.as_ref()?;
 
         if self.search_start >= line.len() {
@@ -157,7 +152,7 @@ impl MatchedWords {
         let matched = self.pattern.find_at(line, self.search_start)?;
         self.search_start = matched.end();
 
-        Some(MatchedWord {
+        Some(Match {
             line: line.clone(),
             line_no: self.line_no,
             range: matched.range(),
@@ -165,7 +160,7 @@ impl MatchedWords {
     }
 
     fn read_next_line(&mut self) -> Option<Result<String>> {
-        match self.iter.next() {
+        match self.lines.next() {
             Some(Ok(line)) => {
                 self.current_line = Some(line.clone());
                 self.search_start = 0;
@@ -180,14 +175,14 @@ impl MatchedWords {
 }
 
 #[derive(Debug)]
-struct MatchedWord {
+struct Match {
     line: String,
     line_no: usize,
     range: Range<usize>,
 }
 
-impl Iterator for MatchedWords {
-    type Item = Result<MatchedWord>;
+impl Iterator for MatchIterator {
+    type Item = Result<Match>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -204,73 +199,115 @@ impl Iterator for MatchedWords {
     }
 }
 
-struct MatchesReporter {
-    output: OutputWriter,
+struct MatchReporter {
+    writer: OutputWriter,
     format: OutputFormat,
-    line_state: LineState,
+    state: LineState,
 }
 
-impl MatchesReporter {
-    pub fn try_from(output: String, format: OutputFormat) -> Result<Self> {
+impl MatchReporter {
+    pub fn try_new(output: String, format: OutputFormat) -> Result<Self> {
+        let writer: OutputWriter = if output == STD_IN_OUT_MARKER {
+            Box::new(io::stdout())
+        } else {
+            Box::new(File::create(output).map_err(GrepError::from)?)
+        };
+
         Ok(Self {
-            output: Self::prepare_output(&output)?,
+            writer,
             format,
-            line_state: LineState::new(),
+            state: LineState::new(),
         })
     }
 
-    fn prepare_output(output: &str) -> Result<OutputWriter> {
-        if output == STDIN_MARKER {
-            Ok(Box::new(io::stdout()))
-        } else {
-            Ok(Box::new(File::create(output).map_err(GrepError::from)?))
-        }
-    }
-
-    pub fn report(&mut self, matched_words: MatchedWords) -> Result<()> {
-        let (count, duration) = self.report_words(matched_words)?;
+    pub fn report(&mut self, matches: MatchIterator) -> Result<()> {
+        let (count, duration) = self.report_matches(matches)?;
         self.report_summary(count, duration);
 
         Ok(())
     }
 
-    fn report_words(&mut self, matched_words: MatchedWords) -> Result<(usize, Duration)> {
+    fn report_matches(&mut self, matches: MatchIterator) -> Result<(usize, Duration)> {
         let start = Instant::now();
         let mut count = 0;
 
-        for word in matched_words {
+        for match_word in matches {
             count += 1;
-            self.report_word(&word?)?;
+            self.report_match(&match_word?)?;
         }
         self.finish_line()?;
 
         // line_state is changed during report, reset it so that this method can be called multiple
         // times on different matched words
-        self.line_state.reset();
+        self.state.reset();
 
         Ok((count, start.elapsed()))
     }
 
-    fn report_word(&mut self, word: &MatchedWord) -> Result<()> {
-        if self.line_state.in_new_line(word.line_no) {
+    fn report_match(&mut self, word: &Match) -> Result<()> {
+        if self.state.in_new_line(word.line_no) {
             self.finish_line()?;
             self.start_new_line(word)?;
         }
 
         let Range { start, end } = word.range;
 
-        self.write_unmatched_word(start)?;
-        self.write_matched_word(&word)?;
+        self.write_unmatched_part(start)?;
+        self.write_matched_part(&word)?;
 
-        self.line_state.advance_unmatched_word(end);
+        self.state.advance_unmatched(end);
 
         Ok(())
     }
 
     fn finish_line(&mut self) -> Result<()> {
-        if let Some(line_no) = self.line_state.current_line_no {
-            self.write_unmatched_word(self.line_state.current_line.len())?;
+        if let Some(line_no) = self.state.current_line_no {
+            self.write_unmatched_part(self.state.current_line.len())?;
             self.write_new_line(line_no)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_unmatched_part(&mut self, pos: usize) -> Result<()> {
+        if pos > self.state.unmatched_start {
+            write!(self.writer, "{}", self.state.get_unmatched(pos)).map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_new_line(&mut self, line_no: usize) -> Result<()> {
+        // output newline at the end of each line starting from first line
+        if line_no > 0 {
+            writeln!(self.writer).map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_matched_part(&mut self, word: &Match) -> Result<()> {
+        let matched_text = &self.state.current_line[word.range.clone()];
+
+        if self.format.color {
+            write!(self.writer, "{}", matched_text.red())
+        } else {
+            write!(self.writer, "{}", matched_text)
+        }
+        .map_err(GrepError::from)
+    }
+
+    fn start_new_line(&mut self, word: &Match) -> Result<()> {
+        self.state.set_line(word);
+        self.write_line_number(word.line_no)?;
+
+        Ok(())
+    }
+
+    fn write_line_number(&mut self, line_no: usize) -> Result<()> {
+        // TODO: line no width should be same
+        if self.format.line_number {
+            write!(self.writer, "[{line_no}]").map_err(GrepError::from)?;
         }
 
         Ok(())
@@ -284,51 +321,6 @@ impl MatchesReporter {
                 format_duration(duration)
             );
         }
-    }
-
-    fn write_unmatched_word(&mut self, pos: usize) -> Result<()> {
-        if pos > self.line_state.unmatched_word_start {
-            write!(self.output, "{}", self.line_state.get_unmatched_word(pos))
-                .map_err(GrepError::from)?;
-        }
-
-        Ok(())
-    }
-
-    fn write_new_line(&mut self, line_no: usize) -> Result<()> {
-        // output newline at the end of each line starting from first line
-        if line_no > 0 {
-            writeln!(self.output).map_err(GrepError::from)?;
-        }
-
-        Ok(())
-    }
-
-    fn write_matched_word(&mut self, word: &MatchedWord) -> Result<()> {
-        let matched_text = &self.line_state.current_line[word.range.clone()];
-
-        if self.format.color {
-            write!(self.output, "{}", matched_text.red())
-        } else {
-            write!(self.output, "{}", matched_text)
-        }
-        .map_err(GrepError::from)
-    }
-
-    fn start_new_line(&mut self, word: &MatchedWord) -> Result<()> {
-        self.line_state.set_to_line(word);
-        self.write_line_number(word.line_no)?;
-
-        Ok(())
-    }
-
-    fn write_line_number(&mut self, line_no: usize) -> Result<()> {
-        // TODO: line no width should be same
-        if self.format.line_number {
-            write!(self.output, "[{line_no}]").map_err(GrepError::from)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -365,7 +357,7 @@ impl OutputFormat {
 
         // output has default value '-', safe to unwrap
         let output = parse_output(args);
-        let is_terminal = output == STDIN_MARKER;
+        let is_terminal = output == STD_IN_OUT_MARKER;
         let color = args.get_flag("color") && is_terminal;
 
         Self::new().with_color(color).with_line_number(line_number).with_report(report)
@@ -380,7 +372,7 @@ fn parse_output(args: &ArgMatches) -> String {
 struct LineState {
     current_line_no: Option<usize>,
     current_line: String,
-    unmatched_word_start: usize,
+    unmatched_start: usize,
 }
 
 impl LineState {
@@ -388,28 +380,28 @@ impl LineState {
         Self {
             current_line: String::new(),
             current_line_no: None,
-            unmatched_word_start: 0,
+            unmatched_start: 0,
         }
     }
 
     fn reset(&mut self) {
         self.current_line_no = None;
         self.current_line.clear();
-        self.unmatched_word_start = 0;
+        self.unmatched_start = 0;
     }
 
-    fn set_to_line(&mut self, word: &MatchedWord) {
+    fn set_line(&mut self, word: &Match) {
         self.current_line_no = Some(word.line_no);
         self.current_line = word.line.clone();
-        self.unmatched_word_start = 0;
+        self.unmatched_start = 0;
     }
 
-    fn advance_unmatched_word(&mut self, pos: usize) {
-        self.unmatched_word_start = pos;
+    fn advance_unmatched(&mut self, pos: usize) {
+        self.unmatched_start = pos;
     }
 
-    fn get_unmatched_word(&self, end: usize) -> &str {
-        &self.current_line[self.unmatched_word_start..end]
+    fn get_unmatched(&self, end: usize) -> &str {
+        &self.current_line[self.unmatched_start..end]
     }
 
     fn in_new_line(&self, line_no: usize) -> bool {
