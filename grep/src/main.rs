@@ -26,7 +26,12 @@ pub enum GrepError {
 }
 
 fn main() -> Result<()> {
-    let (input, regex, output, format) = parse_args()?;
+    let AppConfig {
+        input,
+        regex,
+        output,
+        format,
+    } = parse_args()?;
 
     let searcher = PatternSearcher::try_new(&input)?;
     let matches = searcher.find_matches(regex)?;
@@ -37,8 +42,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// TODO: use derive macro
-fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
+struct AppConfig {
+    input: String,
+    regex: Regex,
+    output: String,
+    format: OutputFormat,
+}
+
+fn parse_args() -> Result<AppConfig> {
     let args = Command::new("grep")
         .version("1.0")
         .about("search for patterns")
@@ -97,7 +108,12 @@ fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
     let format = OutputFormat::from_args(&args);
 
     // TODO: remove clone
-    Ok((input.clone(), regex, output.clone(), format))
+    Ok(AppConfig {
+        input: input.clone(),
+        regex,
+        output: output.clone(),
+        format,
+    })
 }
 
 struct PatternSearcher {
