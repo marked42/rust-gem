@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader, Lines, Result, Write},
+    io::{self, BufRead, BufReader, Lines, Write},
     ops::Range,
     time::Instant,
 };
@@ -9,13 +9,21 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use colored::Colorize;
 use humantime::format_duration;
 use regex::Regex;
+use thiserror::Error;
 
 const STDIN_MARKER: &str = "-";
 
 type InputReader = Box<dyn BufRead>;
 type OutputWriter = Box<dyn Write>;
+type Result<T> = std::result::Result<T, GrepError>;
 
-// TODO: custom error
+#[derive(Error, Debug)]
+pub enum GrepError {
+    #[error("Invalid regex pattern: {0}")]
+    InvalidRegex(#[from] regex::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+}
 
 fn main() -> Result<()> {
     let (input, regex, output, format) = parse_args()?;
@@ -82,12 +90,7 @@ fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
 
     // pattern is required, safe to unwrap
     let pattern = args.get_one::<String>("pattern").unwrap();
-    let regex = Regex::new(pattern).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("Invalid regex pattern: {}", e),
-        )
-    })?;
+    let regex = Regex::new(pattern).map_err(GrepError::from)?;
 
     // input is required, safe to unwrap
     let input = args.get_one::<String>("input").unwrap();
@@ -119,12 +122,7 @@ impl PatternSearcher {
             return Ok(Box::new(io::stdin().lock()));
         }
 
-        let file = File::open(input).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Cannot open file '{}': {}", input, e),
-            )
-        })?;
+        let file = File::open(input).map_err(GrepError::from)?;
         Ok(Box::new(BufReader::new(file)))
     }
 }
@@ -176,7 +174,8 @@ impl MatchedWords {
 
                 Some(Ok(line))
             }
-            other => other,
+            Some(o) => Some(o.map_err(GrepError::from)),
+            None => None,
         }
     }
 }
@@ -223,7 +222,7 @@ impl MatchesReporter {
         if output == STDIN_MARKER {
             Ok(Box::new(io::stdout()))
         } else {
-            Ok(Box::new(File::create(output)?))
+            Ok(Box::new(File::create(output).map_err(GrepError::from)?))
         }
     }
 
@@ -313,10 +312,39 @@ impl LineState {
         }
     }
 
-    fn reset(&mut self) {
-        self.current_line_no = None;
-        self.current_line.clear();
+    fn reset(&mut self, line_no: usize, line: &str) {
+        self.current_line_no = Some(line_no);
+        self.current_line = line.to_string();
         self.last_word_end = 0;
+    }
+
+    fn write_last_word(&self, pos: usize, output: &mut OutputWriter) -> Result<()> {
+        if pos > self.last_word_end {
+            write!(output, "{}", &self.current_line[self.last_word_end..pos])
+                .map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_matched_word(
+        &self,
+        word: &MatchedWord,
+        output: &mut OutputWriter,
+        format: &OutputFormat,
+    ) -> Result<()> {
+        let matched_text = &self.current_line[word.range.clone()];
+        if format.color {
+            write!(output, "{}", matched_text.red()).map_err(GrepError::from)?;
+        } else {
+            write!(output, "{}", matched_text).map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn advance_last_word(&mut self, end: usize) {
+        self.last_word_end = end;
     }
 
     fn process_word(
@@ -331,22 +359,24 @@ impl LineState {
             self.start_new_line(word.line_no, &word.line, output, format)?;
         }
 
-        if word.range.start > self.last_word_end {
-            write!(
-                output,
-                "{}",
-                &self.current_line[self.last_word_end..word.range.start]
-            )?;
+        self.write_last_word(word.range.start, output)?;
+        self.write_matched_word(&word, output, format)?;
+        self.advance_last_word(word.range.end);
+
+        Ok(())
+    }
+
+    fn write_line_number(
+        &mut self,
+        line_no: usize,
+        output: &mut OutputWriter,
+        format: &OutputFormat,
+    ) -> Result<()> {
+        // TODO: line no width should be same
+        if format.line_number {
+            write!(output, "[{line_no}]").map_err(GrepError::from)?;
         }
 
-        let matched_text = &self.current_line[word.range.clone()];
-        if format.color {
-            write!(output, "{}", matched_text.red())?;
-        } else {
-            write!(output, "{}", matched_text)?;
-        }
-
-        self.last_word_end = word.range.end;
         Ok(())
     }
 
@@ -357,13 +387,17 @@ impl LineState {
         output: &mut OutputWriter,
         format: &OutputFormat,
     ) -> Result<()> {
-        self.current_line_no = Some(line_no);
-        self.current_line = line.to_string();
-        self.last_word_end = 0;
+        self.reset(line_no, line);
 
-        // TODO: line no width should be same
-        if format.line_number {
-            write!(output, "[{line_no}]")?
+        self.write_line_number(line_no, output, format)?;
+
+        Ok(())
+    }
+
+    fn write_new_line(&mut self, line_no: usize, output: &mut OutputWriter) -> Result<()> {
+        // output newline at the end of each line starting from first line
+        if line_no > 0 {
+            writeln!(output).map_err(GrepError::from)?;
         }
 
         Ok(())
@@ -371,16 +405,8 @@ impl LineState {
 
     fn finish_line(&mut self, output: &mut OutputWriter) -> Result<()> {
         if let Some(line_no) = self.current_line_no {
-            if self.last_word_end < self.current_line.len() {
-                write!(output, "{}", &self.current_line[self.last_word_end..])?;
-            }
-
-            // output newline at the end of each line starting from first line
-            if line_no > 0 {
-                writeln!(output)?;
-            }
-
-            self.reset();
+            self.write_last_word(self.current_line.len(), output)?;
+            self.write_new_line(line_no, output)?;
         }
 
         Ok(())
