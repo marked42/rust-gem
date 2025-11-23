@@ -375,19 +375,26 @@ struct LineState {
     unmatched_start: usize,
 }
 
+impl Default for LineState {
+    fn default() -> Self {
+        Self {
+            current_line_no: Default::default(),
+            current_line: Default::default(),
+            unmatched_start: Default::default(),
+        }
+    }
+}
+
 impl LineState {
     fn new() -> Self {
-        Self {
-            current_line: String::new(),
-            current_line_no: None,
-            unmatched_start: 0,
-        }
+        Default::default()
     }
 
     fn reset(&mut self) {
-        self.current_line_no = None;
+        self.current_line_no = Default::default();
+        // avoid reallocation
         self.current_line.clear();
-        self.unmatched_start = 0;
+        self.unmatched_start = Default::default();
     }
 
     fn set_line(&mut self, word: &Match) {
