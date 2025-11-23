@@ -26,12 +26,13 @@ pub enum GrepError {
 }
 
 fn main() -> Result<()> {
+    let command = create_grep_command();
     let AppConfig {
         input,
         regex,
         output,
         format,
-    } = parse_args()?;
+    } = AppConfig::from_args(&command.get_matches())?;
 
     let searcher = PatternSearcher::try_new(&input)?;
     let matches = searcher.find_matches(regex)?;
@@ -49,8 +50,8 @@ struct AppConfig {
     format: OutputFormat,
 }
 
-fn parse_args() -> Result<AppConfig> {
-    let args = Command::new("grep")
+fn create_grep_command() -> Command {
+    Command::new("grep")
         .version("1.0")
         .about("search for patterns")
         .arg(
@@ -96,24 +97,27 @@ fn parse_args() -> Result<AppConfig> {
                 .long("summary")
                 .action(ArgAction::SetTrue),
         )
-        .get_matches();
+}
 
-    // pattern is required, safe to unwrap
-    let pattern = args.get_one::<String>("pattern").unwrap();
-    let regex = Regex::new(pattern).map_err(GrepError::from)?;
+impl AppConfig {
+    fn from_args(args: &ArgMatches) -> Result<AppConfig> {
+        // pattern is required, safe to unwrap
+        let pattern = args.get_one::<String>("pattern").unwrap();
+        let regex = Regex::new(pattern).map_err(GrepError::from)?;
 
-    // input is required, safe to unwrap
-    let input = args.get_one::<String>("input").unwrap();
-    let output = parse_output(&args);
-    let format = OutputFormat::from_args(&args);
+        // input is required, safe to unwrap
+        let input = args.get_one::<String>("input").unwrap();
+        let output = parse_output(&args);
+        let format = OutputFormat::from_args(&args);
 
-    // TODO: remove clone
-    Ok(AppConfig {
-        input: input.clone(),
-        regex,
-        output: output.clone(),
-        format,
-    })
+        // TODO: remove clone
+        Ok(AppConfig {
+            input: input.clone(),
+            regex,
+            output: output.clone(),
+            format,
+        })
+    }
 }
 
 struct PatternSearcher {
