@@ -80,10 +80,9 @@ fn parse_args() -> Result<(String, Regex, String, OutputFormat)> {
                 .action(ArgAction::Set),
         )
         .arg(
-            Arg::new("report")
-                .help("output report of found matches count and used time")
-                .short('r')
-                .long("report")
+            Arg::new("summary")
+                .help("output summary of found matches count and used time")
+                .long("summary")
                 .action(ArgAction::SetTrue),
         )
         .get_matches();
@@ -211,7 +210,7 @@ struct MatchesReporter {
 }
 
 impl MatchesReporter {
-    fn try_from(output: String, format: OutputFormat) -> Result<Self> {
+    pub fn try_from(output: String, format: OutputFormat) -> Result<Self> {
         Ok(Self {
             output: Self::prepare_output(&output)?,
             format,
@@ -226,19 +225,52 @@ impl MatchesReporter {
         }
     }
 
-    fn report(&mut self, matched_words: MatchedWords) -> Result<()> {
+    pub fn report(&mut self, matched_words: MatchedWords) -> Result<()> {
+        let (count, start) = self.report_matched_words(matched_words)?;
+        self.report_summary(count, start);
+
+        Ok(())
+    }
+
+    fn report_matched_words(&mut self, matched_words: MatchedWords) -> Result<(usize, Instant)> {
         let start = Instant::now();
         let mut count = 0;
         let mut current_line_state = LineState::new();
 
-        for word_result in matched_words {
-            let word = word_result?;
+        for word in matched_words {
             count += 1;
-            current_line_state.process_word(word, &mut self.output, &self.format)?;
+            self.report_word(&mut current_line_state, word?)?;
         }
-        current_line_state.finish_line(&mut self.output)?;
+        self.finish_line(&mut current_line_state)?;
 
-        if self.format.report {
+        Ok((count, start))
+    }
+
+    fn report_word(&mut self, line_state: &mut LineState, word: MatchedWord) -> Result<()> {
+        if line_state.current_line_no != Some(word.line_no) {
+            self.finish_line(line_state)?;
+            self.start_new_line(line_state, word.line_no, &word.line)?;
+        }
+
+        self.write_last_word(line_state, word.range.start)?;
+        self.write_matched_word(line_state, &word)?;
+
+        line_state.advance_last_word(word.range.end);
+
+        Ok(())
+    }
+
+    fn finish_line(&mut self, line_state: &mut LineState) -> Result<()> {
+        if let Some(line_no) = line_state.current_line_no {
+            self.write_last_word(line_state, line_state.current_line.len())?;
+            self.write_new_line(line_no)?;
+        }
+
+        Ok(())
+    }
+
+    fn report_summary(&self, count: usize, start: Instant) {
+        if self.format.summary {
             let duration = start.elapsed();
 
             println!(
@@ -246,6 +278,58 @@ impl MatchesReporter {
                 count.to_string().green(),
                 format_duration(duration)
             );
+        }
+    }
+
+    fn write_last_word(&mut self, line_state: &LineState, pos: usize) -> Result<()> {
+        if pos > line_state.last_word_end {
+            write!(
+                self.output,
+                "{}",
+                &line_state.current_line[line_state.last_word_end..pos]
+            )
+            .map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_new_line(&mut self, line_no: usize) -> Result<()> {
+        // output newline at the end of each line starting from first line
+        if line_no > 0 {
+            writeln!(self.output).map_err(GrepError::from)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_matched_word(&mut self, line_state: &LineState, word: &MatchedWord) -> Result<()> {
+        let matched_text = &line_state.current_line[word.range.clone()];
+
+        if self.format.color {
+            write!(self.output, "{}", matched_text.red())
+        } else {
+            write!(self.output, "{}", matched_text)
+        }
+        .map_err(GrepError::from)
+    }
+
+    fn start_new_line(
+        &mut self,
+        line_state: &mut LineState,
+        line_no: usize,
+        line: &str,
+    ) -> Result<()> {
+        line_state.reset(line_no, line);
+        self.write_line_number(line_no)?;
+
+        Ok(())
+    }
+
+    fn write_line_number(&mut self, line_no: usize) -> Result<()> {
+        // TODO: line no width should be same
+        if self.format.line_number {
+            write!(self.output, "[{line_no}]").map_err(GrepError::from)?;
         }
 
         Ok(())
@@ -256,7 +340,7 @@ impl MatchesReporter {
 struct OutputFormat {
     color: bool,
     line_number: bool,
-    report: bool,
+    summary: bool,
 }
 
 impl OutputFormat {
@@ -275,13 +359,13 @@ impl OutputFormat {
     }
 
     fn with_report(mut self, report: bool) -> Self {
-        self.report = report;
+        self.summary = report;
         self
     }
 
     fn from_args(args: &ArgMatches) -> Self {
         let line_number = args.get_flag("line_number");
-        let report = args.get_flag("report");
+        let report = args.get_flag("summary");
 
         // output has default value '-', safe to unwrap
         let output = parse_output(args);
@@ -318,97 +402,7 @@ impl LineState {
         self.last_word_end = 0;
     }
 
-    fn write_last_word(&self, pos: usize, output: &mut OutputWriter) -> Result<()> {
-        if pos > self.last_word_end {
-            write!(output, "{}", &self.current_line[self.last_word_end..pos])
-                .map_err(GrepError::from)?;
-        }
-
-        Ok(())
-    }
-
-    fn write_matched_word(
-        &self,
-        word: &MatchedWord,
-        output: &mut OutputWriter,
-        format: &OutputFormat,
-    ) -> Result<()> {
-        let matched_text = &self.current_line[word.range.clone()];
-
-        if format.color {
-            write!(output, "{}", matched_text.red())
-        } else {
-            write!(output, "{}", matched_text)
-        }
-        .map_err(GrepError::from)
-    }
-
     fn advance_last_word(&mut self, end: usize) {
         self.last_word_end = end;
-    }
-
-    fn process_word(
-        &mut self,
-        word: MatchedWord,
-        // TODO: is &mut dyn Write better ?
-        output: &mut OutputWriter,
-        format: &OutputFormat,
-    ) -> Result<()> {
-        if self.current_line_no != Some(word.line_no) {
-            self.finish_line(output)?;
-            self.start_new_line(word.line_no, &word.line, output, format)?;
-        }
-
-        self.write_last_word(word.range.start, output)?;
-        self.write_matched_word(&word, output, format)?;
-        self.advance_last_word(word.range.end);
-
-        Ok(())
-    }
-
-    fn write_line_number(
-        &mut self,
-        line_no: usize,
-        output: &mut OutputWriter,
-        format: &OutputFormat,
-    ) -> Result<()> {
-        // TODO: line no width should be same
-        if format.line_number {
-            write!(output, "[{line_no}]").map_err(GrepError::from)?;
-        }
-
-        Ok(())
-    }
-
-    fn start_new_line(
-        &mut self,
-        line_no: usize,
-        line: &str,
-        output: &mut OutputWriter,
-        format: &OutputFormat,
-    ) -> Result<()> {
-        self.reset(line_no, line);
-
-        self.write_line_number(line_no, output, format)?;
-
-        Ok(())
-    }
-
-    fn write_new_line(&mut self, line_no: usize, output: &mut OutputWriter) -> Result<()> {
-        // output newline at the end of each line starting from first line
-        if line_no > 0 {
-            writeln!(output).map_err(GrepError::from)?;
-        }
-
-        Ok(())
-    }
-
-    fn finish_line(&mut self, output: &mut OutputWriter) -> Result<()> {
-        if let Some(line_no) = self.current_line_no {
-            self.write_last_word(self.current_line.len(), output)?;
-            self.write_new_line(line_no, output)?;
-        }
-
-        Ok(())
     }
 }
