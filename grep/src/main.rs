@@ -122,6 +122,7 @@ impl AppConfig {
 
 struct PatternSearcher {
     reader: InputReader,
+    total_line_count: usize,
 }
 
 impl PatternSearcher {
@@ -133,16 +134,36 @@ impl PatternSearcher {
             Box::new(BufReader::new(file))
         };
 
-        Ok(Self { reader })
+        Ok(Self {
+            reader,
+            total_line_count: Self::count_lines(input)?,
+        })
     }
 
     fn find_matches(self, regex: Regex) -> Result<MatchIterator> {
-        Ok(MatchIterator::new(self.reader, regex))
+        Ok(MatchIterator::new(
+            self.reader,
+            regex,
+            self.total_line_count,
+        ))
+    }
+
+    fn count_lines(input: &str) -> Result<usize> {
+        // 标准输入无法预先知道总行数
+        if input == STD_IN_OUT_MARKER {
+            Ok(0)
+        // 对于文件输入，预先计算总行数以确定行号宽度
+        } else {
+            let file = File::open(input)?;
+            let reader = BufReader::new(file);
+            Ok(reader.lines().count())
+        }
     }
 }
 
 struct MatchIterator {
     lines: Lines<InputReader>,
+    total_line_count: usize,
     pattern: Regex,
     current_line: Option<String>,
     line_no: usize,
@@ -150,13 +171,14 @@ struct MatchIterator {
 }
 
 impl MatchIterator {
-    fn new(input: InputReader, pattern: Regex) -> Self {
+    fn new(input: InputReader, pattern: Regex, total_line_count: usize) -> Self {
         Self {
             lines: input.lines(),
             pattern,
             current_line: None,
             line_no: 0,
             search_start: 0,
+            total_line_count,
         }
     }
 
@@ -223,6 +245,7 @@ struct MatchReporter {
     writer: OutputWriter,
     format: OutputFormat,
     state: LineState,
+    total_line_count: usize,
 }
 
 impl MatchReporter {
@@ -237,13 +260,17 @@ impl MatchReporter {
             writer,
             format,
             state: LineState::new(),
+            total_line_count: 0,
         })
     }
 
     pub fn report(&mut self, matches: MatchIterator) -> Result<()> {
+        self.total_line_count = matches.total_line_count;
+
         let (count, duration) = self.report_matches(matches)?;
         self.report_summary(count, duration);
 
+        self.total_line_count = Default::default();
         Ok(())
     }
 
@@ -325,9 +352,13 @@ impl MatchReporter {
     }
 
     fn write_line_number(&mut self, line_no: usize) -> Result<()> {
-        // TODO: line no width should be same
         if self.format.line_number {
-            write!(self.writer, "[{line_no}]").map_err(GrepError::from)?;
+            write!(
+                self.writer,
+                "[{line_no:>width$}]",
+                width = self.line_number_width()
+            )
+            .map_err(GrepError::from)?;
         }
 
         Ok(())
@@ -341,6 +372,10 @@ impl MatchReporter {
                 format_duration(duration)
             );
         }
+    }
+
+    fn line_number_width(&self) -> usize {
+        self.total_line_count.checked_ilog10().unwrap_or(0) as usize + 1
     }
 }
 
