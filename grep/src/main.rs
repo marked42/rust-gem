@@ -27,14 +27,15 @@ pub enum GrepError {
 
 fn main() -> Result<()> {
     let command = create_grep_command();
+    let args = command.get_matches();
     let AppConfig {
         input,
         regex,
         output,
         format,
-    } = AppConfig::from_args(&command.get_matches())?;
+    } = AppConfig::from_args(&args)?;
 
-    let searcher = PatternSearcher::try_new(&input)?;
+    let searcher = PatternSearcher::try_new(input)?;
     let matches = searcher.find_matches(regex)?;
 
     let mut reporter = MatchReporter::try_new(output, format)?;
@@ -43,10 +44,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-struct AppConfig {
-    input: String,
+struct AppConfig<'a> {
+    input: &'a str,
     regex: Regex,
-    output: String,
+    output: &'a str,
     format: OutputFormat,
 }
 
@@ -98,8 +99,13 @@ fn create_grep_command() -> Command {
         )
 }
 
-impl AppConfig {
-    fn from_args(args: &ArgMatches) -> Result<AppConfig> {
+fn parse_output(args: &ArgMatches) -> &str {
+    args.get_one::<String>("output")
+        .expect("output has default value '-', safe to unwrap")
+}
+
+impl AppConfig<'_> {
+    fn from_args(args: &ArgMatches) -> Result<AppConfig<'_>> {
         let pattern = args
             .get_one::<String>("pattern")
             .expect("pattern is required, should not be empty");
@@ -111,11 +117,10 @@ impl AppConfig {
         let output = parse_output(&args);
         let format = OutputFormat::from_args(&args);
 
-        // TODO: remove clone
         Ok(AppConfig {
-            input: input.clone(),
+            input,
             regex,
-            output: output.clone(),
+            output,
             format,
         })
     }
@@ -250,7 +255,7 @@ struct MatchReporter {
 }
 
 impl MatchReporter {
-    pub fn try_new(output: String, format: OutputFormat) -> Result<Self> {
+    pub fn try_new(output: &str, format: OutputFormat) -> Result<Self> {
         let writer: OutputWriter = if output == STD_IN_OUT_MARKER {
             Box::new(io::stdout())
         } else {
@@ -417,11 +422,6 @@ impl OutputFormat {
 
         Self::new().with_color(color).with_line_number(line_number).with_report(report)
     }
-}
-
-fn parse_output(args: &ArgMatches) -> &String {
-    args.get_one::<String>("output")
-        .expect("output to has stdout as default value, safe to unwrap")
 }
 
 struct LineState {
