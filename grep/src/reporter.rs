@@ -146,7 +146,7 @@ impl MatchReporter {
     }
 
     fn report_summary(&self, count: usize, duration: Duration) {
-        if self.format.summary {
+        if self.format.summary || count != 0 {
             println!(
                 "Found {} matches in {}",
                 count.to_string().green(),
