@@ -385,7 +385,7 @@ impl MatchReporter {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 struct OutputFormat {
     color: bool,
     line_number: bool,
