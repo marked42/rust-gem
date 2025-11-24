@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     } = AppConfig::from_args(&args)?;
 
     let searcher = PatternSearcher::try_new(input)?;
-    let matches = searcher.find_matches(regex)?;
+    let matches = searcher.find_matches(&regex)?;
 
     let mut reporter = MatchReporter::try_new(output, format)?;
     reporter.report(matches)?;
@@ -146,7 +146,7 @@ impl PatternSearcher {
         })
     }
 
-    fn find_matches(self, regex: Regex) -> Result<MatchIterator> {
+    fn find_matches<'a>(self, regex: &'a Regex) -> Result<MatchIterator<'a>> {
         Ok(MatchIterator::new(
             self.reader,
             regex,
@@ -167,17 +167,17 @@ impl PatternSearcher {
     }
 }
 
-struct MatchIterator {
+struct MatchIterator<'a> {
     lines: Lines<InputReader>,
     total_line_count: usize,
-    pattern: Regex,
+    pattern: &'a Regex,
     current_line: Option<String>,
     line_no: usize,
     search_start: usize,
 }
 
-impl MatchIterator {
-    fn new(input: InputReader, pattern: Regex, total_line_count: usize) -> Self {
+impl<'a> MatchIterator<'a> {
+    fn new(input: InputReader, pattern: &'a Regex, total_line_count: usize) -> Self {
         Self {
             lines: input.lines(),
             pattern,
@@ -229,7 +229,7 @@ struct Match {
     range: Range<usize>,
 }
 
-impl Iterator for MatchIterator {
+impl Iterator for MatchIterator<'_> {
     type Item = Result<Match>;
 
     fn next(&mut self) -> Option<Self::Item> {
