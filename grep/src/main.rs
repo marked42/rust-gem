@@ -314,10 +314,16 @@ impl MatchReporter {
     }
 
     fn finish_line(&mut self) -> Result<()> {
-        if let Some(line_no) = self.state.current_line_no {
-            self.write_unmatched_part(self.state.current_line.len())?;
-            self.write_new_line(line_no)?;
-        }
+        // borrow &self in an temporary expression and extract nested fields, avoid conflict
+        // with mut self below
+        let (line_no, line_len) = if let Some((line_no, line)) = &self.state.current {
+            (*line_no, line.len())
+        } else {
+            return Ok(());
+        };
+
+        self.write_unmatched_part(line_len)?;
+        self.write_new_line(line_no)?;
 
         Ok(())
     }
@@ -340,7 +346,7 @@ impl MatchReporter {
     }
 
     fn write_matched_part(&mut self, word: &Match) -> Result<()> {
-        let matched_text = &self.state.current_line[word.range.clone()];
+        let matched_text = &self.state.get_sub_str(word.range.clone());
 
         if self.format.color {
             write!(self.writer, "{}", matched_text.red())
@@ -425,16 +431,14 @@ impl OutputFormat {
 }
 
 struct LineState {
-    current_line_no: Option<usize>,
-    current_line: String,
+    current: Option<(usize, String)>,
     unmatched_start: usize,
 }
 
 impl Default for LineState {
     fn default() -> Self {
         Self {
-            current_line_no: Default::default(),
-            current_line: Default::default(),
+            current: Default::default(),
             unmatched_start: Default::default(),
         }
     }
@@ -446,15 +450,12 @@ impl LineState {
     }
 
     fn reset(&mut self) {
-        self.current_line_no = Default::default();
-        // avoid reallocation
-        self.current_line.clear();
+        self.current = Default::default();
         self.unmatched_start = Default::default();
     }
 
     fn set_line(&mut self, word: &Match) {
-        self.current_line_no = Some(word.line_no);
-        self.current_line = word.line.clone();
+        self.current = Some((word.line_no, word.line.clone()));
         self.unmatched_start = 0;
     }
 
@@ -462,11 +463,19 @@ impl LineState {
         self.unmatched_start = pos;
     }
 
+    fn get_sub_str(&self, range: Range<usize>) -> &str {
+        if let Some((_, current_line)) = &self.current {
+            &current_line[range.clone()]
+        } else {
+            ""
+        }
+    }
+
     fn get_unmatched(&self, end: usize) -> &str {
-        &self.current_line[self.unmatched_start..end]
+        self.get_sub_str(self.unmatched_start..end)
     }
 
     fn in_new_line(&self, line_no: usize) -> bool {
-        self.current_line_no != Some(line_no)
+        self.current.as_ref().map_or(true, |(l, _)| *l != line_no)
     }
 }
