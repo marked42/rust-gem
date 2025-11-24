@@ -65,7 +65,6 @@ fn create_grep_command() -> Command {
                 .help(format!(
                     "File to search (use '{STD_IN_OUT_MARKER}' for standard input))",
                 ))
-                .required(true)
                 .default_value(STD_IN_OUT_MARKER)
                 .action(ArgAction::Set),
         )
@@ -101,12 +100,14 @@ fn create_grep_command() -> Command {
 
 impl AppConfig {
     fn from_args(args: &ArgMatches) -> Result<AppConfig> {
-        // pattern is required, safe to unwrap
-        let pattern = args.get_one::<String>("pattern").unwrap();
+        let pattern = args
+            .get_one::<String>("pattern")
+            .expect("pattern is required, should not be empty");
         let regex = Regex::new(pattern).map_err(GrepError::from)?;
 
-        // input is required, safe to unwrap
-        let input = args.get_one::<String>("input").unwrap();
+        let input = args
+            .get_one::<String>("input")
+            .expect("input to has stdin as default value, safe to unwrap");
         let output = parse_output(&args);
         let format = OutputFormat::from_args(&args);
 
@@ -410,7 +411,6 @@ impl OutputFormat {
         let line_number = args.get_flag("line_number");
         let report = args.get_flag("summary");
 
-        // output has default value '-', safe to unwrap
         let output = parse_output(args);
         let is_terminal = output == STD_IN_OUT_MARKER;
         let color = args.get_flag("color") && is_terminal;
@@ -419,9 +419,9 @@ impl OutputFormat {
     }
 }
 
-fn parse_output(args: &ArgMatches) -> String {
-    // output has default value '-', safe to unwrap
-    args.get_one::<String>("output").unwrap().clone()
+fn parse_output(args: &ArgMatches) -> &String {
+    args.get_one::<String>("output")
+        .expect("output to has stdout as default value, safe to unwrap")
 }
 
 struct LineState {
