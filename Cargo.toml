@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["cpu", "grep", "asyncs", "echo", "echo-server", "my-redis", "pngme", "hexdump"]
+members = ["cpu", "grep", "asyncs", "echo", "echo-server", "my-redis", "pngme", "hexdump", "actionkv"]
