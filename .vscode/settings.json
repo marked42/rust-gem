@@ -1,3 +1,7 @@
 {
+<<<<<<< HEAD
   "cSpell.words": ["asyncs", "humantime", "pngme", "thiserror"]
+=======
+  "cSpell.words": ["byteorder", "HDLC", "humantime", "thiserror"]
+>>>>>>> cc123b8 (feat: mini kv store)
 }
