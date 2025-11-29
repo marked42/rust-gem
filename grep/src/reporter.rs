@@ -20,7 +20,6 @@ pub struct MatchReporter {
     writer: OutputWriter,
     format: OutputFormat,
     state: LineState,
-    total_line_count: usize,
 }
 
 impl MatchReporter {
@@ -35,17 +34,13 @@ impl MatchReporter {
             writer,
             format,
             state: LineState::new(),
-            total_line_count: 0,
         })
     }
 
     pub fn report(&mut self, matches: MatchIterator) -> Result<()> {
-        self.total_line_count = matches.total_line_count;
-
         let (count, duration) = self.report_matches(matches)?;
         self.report_summary(count, duration);
 
-        self.total_line_count = Default::default();
         Ok(())
     }
 
@@ -134,12 +129,7 @@ impl MatchReporter {
 
     fn write_line_number(&mut self, line_no: usize) -> Result<()> {
         if self.format.line_number {
-            write!(
-                self.writer,
-                "[{line_no:>width$}]",
-                width = self.line_number_width()
-            )
-            .map_err(GrepError::from)?;
+            write!(self.writer, "{line_no}:",).map_err(GrepError::from)?;
         }
 
         Ok(())
@@ -153,10 +143,6 @@ impl MatchReporter {
                 format_duration(duration)
             );
         }
-    }
-
-    fn line_number_width(&self) -> usize {
-        self.total_line_count.checked_ilog10().unwrap_or(0) as usize + 1
     }
 }
 
