@@ -1,12 +1,12 @@
 use std::fs::File;
-use std::io;
-use std::io::Write;
+use std::io::{self, BufRead, StdinLock, Write};
 use std::ops::Range;
 use std::time::Duration;
 use std::time::Instant;
 
 use colored::Colorize;
 use humantime::format_duration;
+use regex::Regex;
 
 use crate::OutputFormat;
 use crate::Result;
@@ -110,7 +110,7 @@ impl MatchReporter {
     }
 
     fn write_matched_part(&mut self, word: &Match) -> Result<()> {
-        let matched_text = &self.state.get_sub_str(word.range.clone());
+        let matched_text = self.state.get_sub_str(word.range.clone());
 
         if self.format.color {
             write!(self.writer, "{}", matched_text.red())
@@ -143,6 +143,20 @@ impl MatchReporter {
                 format_duration(duration)
             );
         }
+    }
+
+    pub fn report_matches_in_terminal(reader: StdinLock, regex: &Regex) -> Result<()> {
+        for line in reader.lines() {
+            let line = &line?;
+            let m = regex.find(line);
+            if m.is_some() {
+                println!("{}", regex.replace_all(line, "$0".red().to_string()));
+            } else {
+                println!("{}", line);
+            }
+        }
+
+        Ok(())
     }
 }
 
