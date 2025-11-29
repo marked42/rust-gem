@@ -12,7 +12,6 @@ pub type InputReader = Box<dyn BufRead>;
 
 pub struct PatternSearcher {
     reader: InputReader,
-    total_line_count: usize,
 }
 
 impl PatternSearcher {
@@ -24,30 +23,11 @@ impl PatternSearcher {
             Box::new(BufReader::new(file))
         };
 
-        Ok(Self {
-            reader,
-            total_line_count: Self::count_lines(input)?,
-        })
+        Ok(Self { reader })
     }
 
     pub fn find_matches<'a>(self, regex: &'a Regex) -> Result<MatchIterator<'a>> {
-        Ok(MatchIterator::new(
-            self.reader,
-            regex,
-            self.total_line_count,
-        ))
-    }
-
-    fn count_lines(input: &str) -> Result<usize> {
-        // 标准输入无法预先知道总行数
-        if input == STD_IN_OUT_MARKER {
-            Ok(0)
-        // 对于文件输入，预先计算总行数以确定行号宽度
-        } else {
-            let file = File::open(input)?;
-            let reader = BufReader::new(file);
-            Ok(reader.lines().count())
-        }
+        Ok(MatchIterator::new(self.reader, regex))
     }
 }
 
@@ -60,7 +40,6 @@ pub struct Match {
 
 pub struct MatchIterator<'a> {
     pub lines: Lines<InputReader>,
-    pub total_line_count: usize,
     pub pattern: &'a Regex,
     pub current_line: Option<String>,
     pub line_no: usize,
@@ -68,14 +47,13 @@ pub struct MatchIterator<'a> {
 }
 
 impl<'a> MatchIterator<'a> {
-    fn new(input: InputReader, pattern: &'a Regex, total_line_count: usize) -> Self {
+    fn new(input: InputReader, pattern: &'a Regex) -> Self {
         Self {
             lines: input.lines(),
             pattern,
             current_line: None,
             line_no: 0,
             search_start: 0,
-            total_line_count,
         }
     }
 
