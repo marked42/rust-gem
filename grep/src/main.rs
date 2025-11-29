@@ -1,3 +1,5 @@
+use std::io::{IsTerminal, stdin};
+
 use grep::{AppConfig, MatchReporter, PatternSearcher, Result, create_grep_command};
 
 fn main() -> Result<()> {
@@ -9,6 +11,14 @@ fn main() -> Result<()> {
         output,
         format,
     } = AppConfig::from_args(&args)?;
+
+    {
+        // .lock in nested scope to release lock automatically when not used
+        let reader = stdin().lock();
+        if reader.is_terminal() {
+            return MatchReporter::report_matches_in_terminal(reader, &regex);
+        }
+    }
 
     let searcher = PatternSearcher::try_new(input)?;
     let matches = searcher.find_matches(&regex)?;

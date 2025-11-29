@@ -118,10 +118,7 @@ impl OutputFormat {
     fn from_args(args: &ArgMatches) -> Self {
         let line_number = args.get_flag("line_number");
         let report = args.get_flag("summary");
-
-        let output = parse_output(args);
-        let is_terminal = output == STD_IN_OUT_MARKER;
-        let color = args.get_flag("color") && is_terminal;
+        let color = args.get_flag("color");
 
         Self::new().with_color(color).with_line_number(line_number).with_report(report)
     }
